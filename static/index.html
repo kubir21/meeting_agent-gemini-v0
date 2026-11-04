@@ -42,6 +42,16 @@
           </button>
         </form>
 
+        <div id="progress-container" class="progress-container" hidden>
+          <div class="progress-bar-wrap">
+            <div id="progress-bar" class="progress-bar" style="width: 0%"></div>
+          </div>
+          <div class="progress-meta">
+            <span id="progress-label">Preparing...</span>
+            <span id="progress-pct">0%</span>
+          </div>
+        </div>
+
         <ol id="steps" class="steps" hidden>
           <li data-step="0"><span class="dot"></span>Uploading video</li>
           <li data-step="1"><span class="dot"></span>Analysing content</li>

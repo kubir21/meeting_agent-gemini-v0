@@ -4,6 +4,8 @@
   const chip = $("file-chip"), chipName = $("file-name"), chipSize = $("file-size");
   const btn = $("generate-btn"), btnLabel = btn.querySelector(".btn-label");
   const stepsEl = $("steps"), alertBox = $("alert");
+  const progressContainer = $("progress-container"), progressBar = $("progress-bar");
+  const progressLabel = $("progress-label"), progressPct = $("progress-pct");
   const emptyEl = $("empty"), reportEl = $("report");
   const historyPanel = $("history-panel"), historyList = $("history-list");
 
@@ -55,28 +57,32 @@
     e.preventDefault(); dropzone.classList.remove("drag"); }));
   dropzone.addEventListener("drop", (e) => setFile(e.dataTransfer.files[0]));
 
-  // Progress steps
+  // Progress steps & bar
+  function setProgress(pct, label) {
+    const val = Math.min(100, Math.max(0, Math.round(pct)));
+    progressBar.style.width = `${val}%`;
+    progressPct.textContent = `${val}%`;
+    if (label) progressLabel.textContent = label;
+  }
+
   function setStep(n) {
     stepsEl.querySelectorAll("li").forEach((li) => {
       const i = Number(li.dataset.step);
       li.className = i < n ? "done" : i === n ? "active" : "";
     });
   }
+
   function setLoading(on) {
     btn.disabled = on || !selectedFile;
     btn.classList.toggle("loading", on);
     btnLabel.textContent = on ? "Generating..." : "Generate Report";
     input.disabled = on;
     stepsEl.hidden = !on;
+    progressContainer.hidden = !on;
     clearInterval(timer);
     if (on) {
-      const start = Date.now();
-      const tick = () => {
-        const s = (Date.now() - start) / 1000;
-        setStep(s < 6 ? 0 : s < 40 ? 1 : 2);
-      };
-      tick();
-      timer = setInterval(tick, 1000);
+      setProgress(0, "Starting upload...");
+      setStep(0);
     }
   }
 
@@ -204,21 +210,79 @@
     if (!selectedFile) return;
     alertBox.hidden = true;
     setLoading(true);
+
     const data = new FormData();
     data.append("file", selectedFile);
+
     try {
-      const res = await fetch("/generate-report", { method: "POST", body: data });
-      let body = {};
-      try { body = await res.json(); } catch { /* non-JSON response */ }
-      if (!res.ok || body.status !== "success") {
-        throw new Error(body.detail || `Server error (HTTP ${res.status}).`);
-      }
+      const xhr = new XMLHttpRequest();
+
+      const responsePromise = new Promise((resolve, reject) => {
+        xhr.upload.addEventListener("progress", (ev) => {
+          if (ev.lengthComputable) {
+            // Upload takes first 0% - 40% of overall progress
+            const uploadPct = (ev.loaded / ev.total) * 40;
+            setProgress(uploadPct, `Uploading video (${fmtSize(ev.loaded)} / ${fmtSize(ev.total)})...`);
+            if (uploadPct >= 38) {
+              setStep(1);
+            }
+          }
+        });
+
+        xhr.upload.addEventListener("load", () => {
+          setStep(1);
+          setProgress(40, "Video uploaded. Gemini is processing audio and visual tracks...");
+          // Animate progress smoothly from 40% to 92% while waiting for LLM
+          let currentPct = 40;
+          timer = setInterval(() => {
+            if (currentPct < 75) {
+              currentPct += 1.5;
+              setProgress(currentPct, "Gemini is analyzing video and generating transcript...");
+            } else if (currentPct < 92) {
+              currentPct += 0.5;
+              setStep(2);
+              setProgress(currentPct, "Formatting PDF report and contextual Q&A...");
+            }
+          }, 1000);
+        });
+
+        xhr.addEventListener("load", () => {
+          clearInterval(timer);
+          try {
+            const body = JSON.parse(xhr.responseText || "{}");
+            if (xhr.status >= 200 && xhr.status < 300 && body.status === "success") {
+              setProgress(100, "Done!");
+              setStep(3);
+              resolve(body);
+            } else {
+              reject(new Error(body.detail || `Server error (HTTP ${xhr.status}).`));
+            }
+          } catch (err) {
+            reject(new Error(`Server error (HTTP ${xhr.status}).`));
+          }
+        });
+
+        xhr.addEventListener("error", () => {
+          clearInterval(timer);
+          reject(new Error("Could not reach the server. Please make sure it is running."));
+        });
+
+        xhr.addEventListener("abort", () => {
+          clearInterval(timer);
+          reject(new Error("Upload aborted."));
+        });
+      });
+
+      xhr.open("POST", "/generate-report");
+      xhr.send(data);
+
+      const body = await responsePromise;
       renderReport(body);
       saveHistory(body);
     } catch (err) {
-      const msg = err instanceof TypeError ? "Could not reach the server. Please make sure it is running." : err.message;
-      showAlert("error", msg);
+      showAlert("error", err.message || "An error occurred.");
     } finally {
+      clearInterval(timer);
       setLoading(false);
     }
   });
