@@ -80,9 +80,16 @@ ANSWER RULES
 """
 
 
+PROMPT_FILE = config.BASE_DIR / "gemini_prompt_file.txt"
+
+
 def build_prompt() -> str:
     qs = "\n".join(f"Q{i}: {q}" for i, q in enumerate(config.QUESTIONS, 1))
-    return PROMPT_TEMPLATE.format(questions=qs, not_mentioned=NOT_MENTIONED)
+    if PROMPT_FILE.exists():
+        template = PROMPT_FILE.read_text(encoding="utf-8")
+    else:
+        template = PROMPT_TEMPLATE
+    return template.format(questions=qs, not_mentioned=NOT_MENTIONED)
 
 
 # --- Client / file handling ----------------------------------------------------

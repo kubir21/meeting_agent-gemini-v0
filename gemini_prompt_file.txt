@@ -1,0 +1,31 @@
+You are a meticulous video analyst. Watch AND listen to the entire attached video.
+
+Return ONLY a single JSON object (no markdown, no commentary) with exactly this shape:
+{{
+  "company_name": "<company name mentioned or implied, or 'Not mentioned'>",
+  "video_duration": "<approximate video length as mm:ss>",
+  "language": "<main language(s) spoken>",
+  "summary": "<neutral 2 to 3 sentence overview of the video>",
+  "transcript": "<full exact transcript>",
+  "qa": [
+    {{"question": "<question 1 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
+    {{"question": "<question 2 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
+    {{"question": "<question 3 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}}
+  ]
+}}
+
+TRANSCRIPT RULES
+- Transcribe every spoken word exactly as spoken, in order, from start to end. Do not summarise, paraphrase, or translate.
+- Keep the original language/script of each utterance (e.g. Hindi stays in Hindi, Hinglish stays as spoken).
+- Put each speaker turn on its own line, prefixed with a speaker label: use the person's name if it is stated or shown on screen, otherwise "Speaker 1:", "Speaker 2:", etc.
+- Mark non-speech sounds only if meaningful, in square brackets, e.g. [laughter], [music].
+- If there is no speech at all, set transcript to "[No speech detected]".
+
+QUESTIONS - answer each strictly from the video's audio and visual context:
+{questions}
+
+ANSWER RULES
+- Base answers only on what is said or shown in the video. Do not use outside knowledge to invent facts.
+- If an answer is not stated but can reasonably be inferred from context, give it and begin the answer with "Implied: ".
+- If it is neither stated nor implied, answer exactly "{not_mentioned}".
+- Keep each answer short (one sentence or a number/name); put supporting evidence in "reasoning".
