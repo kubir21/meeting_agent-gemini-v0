@@ -3,45 +3,97 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Video Analysis Report Generator</title>
+  <title>Video Insights</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/static/styles.css" />
 </head>
 <body>
-  <main class="card">
-    <header>
-      <div class="logo" aria-hidden="true">AI</div>
-      <h1>Video Analysis Report</h1>
-      <p class="subtitle">Upload a video. Gemini extracts the transcript, answers the key questions,
-        and a PDF report is emailed to <strong>rk26.ftw@gmail.com</strong>.</p>
-    </header>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">VI</span><span class="brand-name">Video Insights</span></div>
+    <div class="topbar-date" id="today"></div>
+  </header>
 
-    <form id="upload-form">
-      <label id="dropzone" class="dropzone" for="file-input">
-        <input id="file-input" name="file" type="file" accept="video/*,.mp4,.mov,.webm,.mkv,.avi" />
-        <div class="dz-icon" aria-hidden="true">+</div>
-        <div class="dz-text"><strong>Click to choose</strong> or drag &amp; drop a video</div>
-        <div class="dz-hint">MP4, MOV, WEBM, MKV, AVI</div>
-        <div id="file-info" class="file-info" hidden></div>
-      </label>
-
-      <button id="generate-btn" type="submit" class="btn" disabled>
-        <span class="spinner" aria-hidden="true"></span>
-        <span class="btn-label">Generate Report</span>
-      </button>
-    </form>
-
-    <div id="status" class="status" hidden>
-      <span id="status-text">Uploading…</span>
-      <span id="elapsed" class="elapsed">0s</span>
+  <main class="page">
+    <div class="page-head">
+      <h1>Video Analysis</h1>
+      <p>Upload a recording to receive a structured report with key findings and a full transcript.</p>
     </div>
 
-    <div id="alert" class="alert" role="alert" hidden></div>
-    <section id="results" class="results" hidden></section>
+    <div class="grid">
+      <!-- Left: new analysis -->
+      <section class="panel" aria-labelledby="new-title">
+        <h2 id="new-title" class="panel-title">New analysis</h2>
+        <form id="upload-form">
+          <label id="dropzone" class="dropzone" for="file-input">
+            <input id="file-input" name="file" type="file" accept="video/*,.mp4,.mov,.webm,.mkv,.avi" />
+            <svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <div class="dz-text"><strong>Choose a video</strong> or drag it here</div>
+            <div class="dz-hint">MP4, MOV, WEBM, MKV or AVI</div>
+          </label>
+          <div id="file-chip" class="file-chip" hidden>
+            <span id="file-name" class="file-name"></span>
+            <span id="file-size" class="file-size"></span>
+          </div>
 
-    <footer>Questions analysed: number of speakers · company name · average salary</footer>
+          <button id="generate-btn" type="submit" class="btn btn-primary" disabled>
+            <span class="spinner" aria-hidden="true"></span>
+            <span class="btn-label">Generate Report</span>
+          </button>
+        </form>
+
+        <ol id="steps" class="steps" hidden>
+          <li data-step="0"><span class="dot"></span>Uploading video</li>
+          <li data-step="1"><span class="dot"></span>Analysing content</li>
+          <li data-step="2"><span class="dot"></span>Preparing report</li>
+        </ol>
+        <div id="alert" class="alert" role="alert" hidden></div>
+      </section>
+
+      <!-- Right: results -->
+      <section class="panel results-panel" aria-live="polite">
+        <div id="empty" class="empty">
+          <div class="empty-mark">VI</div>
+          <h3>Your report will appear here</h3>
+          <p>Upload a video and select Generate Report to get started.</p>
+        </div>
+
+        <div id="report" hidden>
+          <div class="report-head">
+            <div>
+              <div class="eyebrow">Report</div>
+              <h2 id="r-company" class="r-company"></h2>
+              <div id="r-sub" class="r-sub"></div>
+            </div>
+            <span id="r-id" class="badge"></span>
+          </div>
+
+          <div class="tiles" id="r-tiles"></div>
+
+          <div class="actions">
+            <button id="dl-pdf" class="btn btn-primary" type="button">Download Report (PDF)</button>
+            <button id="dl-txt" class="btn btn-secondary" type="button">Download Transcript (.txt)</button>
+          </div>
+          <div id="r-note" class="note" hidden></div>
+
+          <div id="r-summary-wrap" hidden>
+            <h3 class="section">Overview</h3>
+            <p id="r-summary" class="summary"></p>
+          </div>
+
+          <h3 class="section">Key findings</h3>
+          <div id="r-qa"></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel history" id="history-panel" hidden>
+      <h2 class="panel-title">Recent reports</h2>
+      <ul id="history-list" class="history-list"></ul>
+      <p class="history-note">Saved in this browser only.</p>
+    </section>
   </main>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

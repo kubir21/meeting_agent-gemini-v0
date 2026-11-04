@@ -66,11 +66,22 @@ async def generate_report(file: UploadFile = File(...)):
         log.info("Received %s (%.1f MB) -> %s", original_name, size / 1e6, temp_path.name)
 
         result = await run_in_threadpool(run_pipeline, temp_path, original_name, True, False)
+        analysis = result["analysis"]
         return {
             "status": "success",
-            "message": f"Report generated and emailed to {config.RECIPIENT_EMAIL}.",
-            "recipient": config.RECIPIENT_EMAIL,
-            "qa": result["analysis"]["qa"],
+            "report_id": result["report_id"],
+            "generated_at": result["generated_at"],
+            "company": result["company"],
+            "source_file": original_name,
+            "meta": {
+                "duration": analysis.get("video_duration", ""),
+                "language": analysis.get("language", ""),
+            },
+            "summary": analysis.get("summary", ""),
+            "qa": analysis["qa"],
+            "transcript": analysis.get("transcript", ""),
+            "pdf_base64": result["pdf_base64"],
+            "email": {"sent": result["emailed"], "recipient": result["recipient"], "note": result["email_note"]},
         }
     except ValueError as exc:
         return error(400, str(exc))

@@ -38,6 +38,10 @@ class QAItem(BaseModel):
 
 
 class VideoAnalysis(BaseModel):
+    company_name: str = Field(description="Company name mentioned or implied, or 'Not mentioned'.")
+    video_duration: str = Field(description="Approximate video length as mm:ss.")
+    language: str = Field(description="Main language(s) spoken, e.g. 'Hindi', 'English', 'Hindi and English'.")
+    summary: str = Field(description="Neutral 2 to 3 sentence overview of the video.")
     transcript: str = Field(description="Full verbatim transcript with speaker labels.")
     qa: list[QAItem]
 
@@ -46,6 +50,10 @@ PROMPT_TEMPLATE = """You are a meticulous video analyst. Watch AND listen to the
 
 Return ONLY a single JSON object (no markdown, no commentary) with exactly this shape:
 {{
+  "company_name": "<company name mentioned or implied, or 'Not mentioned'>",
+  "video_duration": "<approximate video length as mm:ss>",
+  "language": "<main language(s) spoken>",
+  "summary": "<neutral 2 to 3 sentence overview of the video>",
   "transcript": "<full exact transcript>",
   "qa": [
     {{"question": "<question 1 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
@@ -78,10 +86,17 @@ def build_prompt() -> str:
 
 
 # --- Client / file handling ----------------------------------------------------
+_CLIENT: genai.Client | None = None
+
+
 def get_client() -> genai.Client:
+    """Return one shared client (a throwaway client gets closed on garbage collection)."""
+    global _CLIENT
     if not config.GEMINI_API_KEY or config.GEMINI_API_KEY.startswith("paste-"):
         raise ConfigError("GEMINI_API_KEY is not set. Add it to the .env file (see .env.example).")
-    return genai.Client(api_key=config.GEMINI_API_KEY)
+    if _CLIENT is None:
+        _CLIENT = genai.Client(api_key=config.GEMINI_API_KEY)
+    return _CLIENT
 
 
 def _state_name(file_obj: Any) -> str:
@@ -171,7 +186,17 @@ def normalize_analysis(data: dict) -> dict:
                 "reasoning": str(item.get("reasoning") or "").strip(),
             }
         )
-    return {"transcript": transcript, "qa": qa}
+    def _text(key: str, default: str) -> str:
+        return str(data.get(key) or "").strip() or default
+
+    return {
+        "company_name": _text("company_name", "Not mentioned"),
+        "video_duration": _text("video_duration", "Not available"),
+        "language": _text("language", "Not available"),
+        "summary": _text("summary", ""),
+        "transcript": transcript,
+        "qa": qa,
+    }
 
 
 # --- Main entry point -----------------------------------------------------------
@@ -198,4 +223,14 @@ def analyze_video(path: Path, ref: dict) -> dict:
         data = parse_model_json(response.text or "")
     analysis = normalize_analysis(data)
     analysis["model"] = config.GEMINI_MODEL
+
+    usage = getattr(response, "usage_metadata", None)
+    if usage:
+        analysis["usage"] = {
+            "prompt_token_count": getattr(usage, "prompt_token_count", 0),
+            "candidates_token_count": getattr(usage, "candidates_token_count", 0),
+            "total_token_count": getattr(usage, "total_token_count", 0),
+        }
+    else:
+        analysis["usage"] = {}
     return analysis
