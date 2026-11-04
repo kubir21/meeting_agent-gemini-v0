@@ -13,11 +13,11 @@
 
   const ALLOWED = [".mp4", ".mov", ".webm", ".mkv", ".avi"];
   const STAGES = [
-    [0, "Uploading video…"],
-    [4, "Gemini is processing the video…"],
-    [15, "Extracting transcript & answering questions…"],
-    [45, "Building PDF & sending email…"],
-    [90, "Still working — longer videos take more time…"],
+    [0, "Uploading video..."],
+    [4, "Gemini is processing the video..."],
+    [15, "Extracting transcript & answering questions..."],
+    [45, "Building PDF & sending email..."],
+    [90, "Still working - longer videos take more time..."],
   ];
   let selectedFile = null;
   let timer = null;
@@ -45,7 +45,7 @@
       return;
     }
     selectedFile = file;
-    fileInfo.textContent = `🎬 ${file.name} · ${fmtSize(file.size)}`;
+    fileInfo.textContent = `${file.name} (${fmtSize(file.size)})`;
     fileInfo.hidden = false;
     btn.disabled = false;
   }
@@ -53,7 +53,7 @@
   function setLoading(on) {
     btn.disabled = on;
     btn.classList.toggle("loading", on);
-    btnLabel.textContent = on ? "Generating Report…" : "Generate Report";
+    btnLabel.textContent = on ? "Generating Report..." : "Generate Report";
     input.disabled = on;
     statusBox.hidden = !on;
     clearInterval(timer);
@@ -92,7 +92,7 @@
       if (!res.ok || body.status !== "success") {
         throw new Error(body.detail || `Server error (HTTP ${res.status}).`);
       }
-      showAlert("success", `✅ ${body.message || "Report generated and emailed successfully."}`);
+      showAlert("success", body.message || "Report generated and emailed successfully.");
       if (Array.isArray(body.qa) && body.qa.length) {
         results.innerHTML =
           "<h2>Quick preview</h2>" +
@@ -102,7 +102,7 @@
       }
     } catch (err) {
       const msg = err instanceof TypeError ? "Could not reach the server. Is it running?" : err.message;
-      showAlert("error", `❌ ${msg}`);
+      showAlert("error", msg);
     } finally {
       setLoading(false);
       btn.disabled = !selectedFile;
