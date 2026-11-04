@@ -113,9 +113,10 @@ def _title_block(pdf: ReportPDF, company: str) -> None:
     size = 26 if len(company) <= 28 else 20
     pdf.font("B", size)
     pdf.multi_cell(pdf.w - 40, 11, pdf.t(company), align="L", new_x="LMARGIN", new_y="NEXT")
-    pdf.font("", 11)
-    pdf.set_text_color(199, 210, 254)
-    pdf.cell(0, 7, pdf.t("Video Analysis Report"), new_x="LMARGIN", new_y="NEXT")
+    if company != "Video Analysis Report":
+        pdf.font("", 11)
+        pdf.set_text_color(199, 210, 254)
+        pdf.cell(0, 7, pdf.t("Video Analysis Report"), new_x="LMARGIN", new_y="NEXT")
     pdf.set_y(56)
 
 
