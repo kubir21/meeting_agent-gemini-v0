@@ -7,7 +7,7 @@
   <link rel="icon" href="data:," />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=20261112" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261112b" />
 </head>
 <body>
   <header class="topbar">
@@ -28,7 +28,7 @@
         <form id="upload-form">
           <label id="dropzone" class="dropzone" for="file-input">
             <input id="file-input" name="file" type="file" accept="video/*,.mp4,.mov,.webm,.mkv,.avi" />
-            <svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg class="dz-icon" width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4m0 0l-4 4m4-4l4 4M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
             <div class="dz-text"><strong>Choose a video</strong> or drag it here</div>
             <div class="dz-hint">MP4, MOV, WEBM, MKV or AVI</div>
           </label>
@@ -90,8 +90,8 @@
             <div class="email-group" id="email-group">
               <input id="email-input" type="email" inputmode="email" autocomplete="email"
                      placeholder="name@company.com" maxlength="254" spellcheck="false" />
-              <button id="email-send" class="email-btn" type="button" aria-label="Send report by email" disabled>
-                <svg class="icon-mail" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 014.5 5h15A1.5 1.5 0 0121 6.5v11a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 17.5v-11zm1.6.4l7.4 5.6 7.4-5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <button id="email-send" class="email-btn" type="button" aria-label="Send report by email" title="Send report by email" disabled>
+                <svg class="icon-mail" width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 014.5 5h15A1.5 1.5 0 0121 6.5v11a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 17.5v-11zm1.6.4l7.4 5.6 7.4-5.6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
                 <span class="email-spinner" aria-hidden="true"></span>
               </button>
             </div>
@@ -117,6 +117,6 @@
     </section>
   </main>
 
-  <script src="/static/app.js?v=20261112"></script>
+  <script src="/static/app.js?v=20261112b"></script>
 </body>
 </html>
