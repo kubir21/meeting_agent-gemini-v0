@@ -14,7 +14,7 @@ from collections import deque
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -30,6 +30,14 @@ log = logging.getLogger("app")
 
 app = FastAPI(title="Video Analysis Report Generator")
 app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
+
+
+@app.middleware("http")
+async def no_cache_ui(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path == "/" or request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+    return response
 
 CHUNK = 1024 * 1024
 
