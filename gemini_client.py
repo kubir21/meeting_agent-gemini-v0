@@ -58,7 +58,9 @@ Return ONLY a single JSON object (no markdown, no commentary) with exactly this 
   "qa": [
     {{"question": "<question 1 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
     {{"question": "<question 2 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 3 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}}
+    {{"question": "<question 3 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
+    {{"question": "<question 4 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
+    {{"question": "<question 5 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}}
   ]
 }}
 
@@ -76,7 +78,8 @@ ANSWER RULES
 - Base answers only on what is said or shown in the video. Do not use outside knowledge to invent facts.
 - If an answer is not stated but can reasonably be inferred from context, give it and begin the answer with "Implied: ".
 - If it is neither stated nor implied, answer exactly "{not_mentioned}".
-- Keep each answer short (one sentence or a number/name); put supporting evidence in "reasoning".
+- Write each answer as a clear, professional summary of 2 to 4 sentences. Include specific figures, programmes or examples when they are stated.
+- Put supporting evidence (a short paraphrase or quote and, if possible, where it occurs) in "reasoning".
 """
 
 
@@ -175,7 +178,7 @@ def parse_model_json(text: str) -> dict:
 
 
 def normalize_analysis(data: dict) -> dict:
-    """Coerce arbitrary model output into {transcript, qa:[3 items in fixed order]}."""
+    """Coerce arbitrary model output into {transcript, qa:[one item per configured question, fixed order]}."""
     transcript = str(data.get("transcript") or "").strip() or "[No transcript returned]"
     raw_qa = data.get("qa") or data.get("answers") or data.get("questions") or []
     if isinstance(raw_qa, dict):  # e.g. {"Q1": "...", ...}

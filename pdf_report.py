@@ -1,7 +1,7 @@
 """Generate the client-facing PDF report with fpdf2.
 
-Layout: company name as title, a small details block (date, time, video, duration,
-language, report id), an optional overview, then Question N / Answer N pairs.
+Layout: charcoal title band with amber rule, details block, overview, then numbered
+findings (topic, question, answer, evidence). Colours match the web app.
 """
 from __future__ import annotations
 
@@ -16,11 +16,14 @@ import config
 
 log = logging.getLogger(__name__)
 
-NAVY = (17, 24, 39)
-ACCENT = (79, 70, 229)
-LIGHT = (243, 244, 246)
-TEXT = (31, 41, 55)
-MUTED = (107, 114, 128)
+# Palette matches the web app (light theme).
+CHARCOAL = (30, 41, 59)     # #1E293B
+OFFWHITE = (248, 250, 252)  # #F8FAFC
+AMBER = (250, 204, 21)      # #FACC15
+TEAL = (13, 148, 136)       # #0D9488
+MUTED = (100, 116, 139)     # #64748B
+LINE = (226, 232, 240)      # #E2E8F0
+SLATE_LIGHT = (203, 213, 225)
 
 _LATIN1_MAP = str.maketrans({
     "\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"',
@@ -96,38 +99,40 @@ class ReportPDF(FPDF):
         self.set_font(self.family, style, size)
 
     def footer(self) -> None:
-        self.set_y(-14)
+        self.set_draw_color(*LINE)
+        self.line(20, self.h - 16, self.w - 20, self.h - 16)
+        self.set_y(-13)
         self.font("", 8)
         self.set_text_color(*MUTED)
-        self.cell(0, 6, self.t(f"Confidential  |  Generated automatically  |  Page {self.page_no()}/{{nb}}"),
-                  align="C")
+        self.cell(0, 6, self.t("Video Insights  |  Confidential"), align="L")
+        self.set_x(20)
+        self.cell(0, 6, self.t(f"Page {self.page_no()} of {{nb}}"), align="R")
 
 
 def _title_block(pdf: ReportPDF, company: str) -> None:
-    pdf.set_fill_color(*NAVY)
-    pdf.rect(0, 0, pdf.w, 46, style="F")
-    pdf.set_fill_color(*ACCENT)
-    pdf.rect(0, 46, pdf.w, 2, style="F")
-    pdf.set_xy(20, 13)
-    pdf.set_text_color(255, 255, 255)
-    size = 26 if len(company) <= 28 else 20
-    pdf.font("B", size)
-    pdf.multi_cell(pdf.w - 40, 11, pdf.t(company), align="L", new_x="LMARGIN", new_y="NEXT")
-    if company != "Video Analysis Report":
-        pdf.font("", 11)
-        pdf.set_text_color(199, 210, 254)
-        pdf.cell(0, 7, pdf.t("Video Analysis Report"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_fill_color(*CHARCOAL)
+    pdf.rect(0, 0, pdf.w, 44, style="F")
+    pdf.set_fill_color(*AMBER)
+    pdf.rect(0, 44, pdf.w, 1.6, style="F")
+    pdf.set_xy(20, 12)
+    pdf.font("B", 8.5)
+    pdf.set_text_color(*AMBER)
+    pdf.cell(0, 5, pdf.t("VIDEO ANALYSIS REPORT"), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(20)
+    pdf.set_text_color(*OFFWHITE)
+    pdf.font("B", 24 if len(company) <= 30 else 18)
+    pdf.multi_cell(pdf.w - 40, 10, pdf.t(company), align="L", new_x="LMARGIN", new_y="NEXT")
     pdf.set_y(56)
 
 
 def _details_block(pdf: ReportPDF, rows: list[tuple[str, str]]) -> None:
     col_w = (pdf.w - 40) / 2
-    pdf.set_fill_color(*LIGHT)
-    pdf.set_draw_color(229, 231, 235)
     top = pdf.get_y()
     row_h = 14
     total_h = row_h * ((len(rows) + 1) // 2) + 4
-    pdf.rect(20, top, pdf.w - 40, total_h, style="F")
+    pdf.set_fill_color(*OFFWHITE)
+    pdf.set_draw_color(*LINE)
+    pdf.rect(20, top, pdf.w - 40, total_h, style="DF")
     for i, (label, value) in enumerate(rows):
         x = 24 + (i % 2) * col_w
         y = top + 3 + (i // 2) * row_h
@@ -137,42 +142,55 @@ def _details_block(pdf: ReportPDF, rows: list[tuple[str, str]]) -> None:
         pdf.cell(col_w - 8, 4, pdf.t(label.upper()))
         pdf.set_xy(x, y + 4.5)
         pdf.font("B", 10)
-        pdf.set_text_color(*TEXT)
+        pdf.set_text_color(*CHARCOAL)
         pdf.cell(col_w - 8, 5, pdf.t(value[:44]))
-    pdf.set_y(top + total_h + 8)
+    pdf.set_y(top + total_h + 10)
 
 
 def _heading(pdf: ReportPDF, text: str) -> None:
-    pdf.font("B", 12)
-    pdf.set_text_color(*ACCENT)
-    pdf.cell(0, 8, pdf.t(text), new_x="LMARGIN", new_y="NEXT")
-    pdf.set_text_color(*TEXT)
+    pdf.font("B", 13)
+    pdf.set_text_color(*CHARCOAL)
+    pdf.cell(0, 7, pdf.t(text), new_x="LMARGIN", new_y="NEXT")
+    y = pdf.get_y() + 0.5
+    pdf.set_fill_color(*AMBER)
+    pdf.rect(20, y, 14, 1, style="F")
+    pdf.set_y(y + 5)
 
 
 def _qa_block(pdf: ReportPDF, n: int, item: dict) -> None:
-    if pdf.get_y() > pdf.h - 55:
+    if pdf.get_y() > pdf.h - 70:
         pdf.add_page()
     w = pdf.w - 40
-    pdf.font("B", 9)
-    pdf.set_text_color(*ACCENT)
-    pdf.cell(0, 6, pdf.t(f"QUESTION {n}"), new_x="LMARGIN", new_y="NEXT")
-    pdf.font("B", 11.5)
-    pdf.set_text_color(*NAVY)
-    pdf.multi_cell(w, 6.5, pdf.t(item["question"]), align="L", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(2)
-    pdf.font("B", 9)
-    pdf.set_text_color(*MUTED)
-    pdf.cell(0, 6, pdf.t(f"ANSWER {n}"), new_x="LMARGIN", new_y="NEXT")
-    pdf.font("", 11)
-    pdf.set_text_color(*TEXT)
-    pdf.multi_cell(w, 6.5, pdf.t(item["answer"]), align="L", new_x="LMARGIN", new_y="NEXT")
-    if item.get("reasoning"):
-        pdf.ln(1)
-        pdf.font("", 9)
+    topic, sep, ask = item["question"].partition(": ")
+    if not sep:
+        topic, ask = item["question"], ""
+    pdf.font("B", 12)
+    pdf.set_text_color(*TEAL)
+    pdf.cell(9, 7, pdf.t(f"{n}."))
+    pdf.set_text_color(*CHARCOAL)
+    pdf.multi_cell(w - 9, 7, pdf.t(topic), align="L", new_x="LMARGIN", new_y="NEXT")
+    if ask:
+        pdf.font("", 9.5)
         pdf.set_text_color(*MUTED)
-        pdf.multi_cell(w, 5, pdf.t(f"Evidence: {item['reasoning']}"), align="L", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(5)
-    pdf.set_draw_color(229, 231, 235)
+        pdf.set_x(29)
+        pdf.multi_cell(w - 9, 5.2, pdf.t(ask), align="L", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(2.5)
+    pdf.font("", 10.5)
+    pdf.set_text_color(*CHARCOAL)
+    pdf.set_x(29)
+    pdf.multi_cell(w - 9, 6, pdf.t(item["answer"]), align="L", new_x="LMARGIN", new_y="NEXT")
+    if item.get("reasoning"):
+        pdf.ln(1.5)
+        y0 = pdf.get_y()
+        pdf.font("", 8.5)
+        pdf.set_text_color(*MUTED)
+        pdf.set_x(32)
+        pdf.multi_cell(w - 12, 4.8, pdf.t(f"Evidence: {item['reasoning']}"), align="L",
+                       new_x="LMARGIN", new_y="NEXT")
+        pdf.set_fill_color(*SLATE_LIGHT)
+        pdf.rect(29, y0, 0.6, pdf.get_y() - y0, style="F")
+    pdf.ln(4)
+    pdf.set_draw_color(*LINE)
     pdf.line(20, pdf.get_y(), pdf.w - 20, pdf.get_y())
     pdf.ln(6)
 
@@ -198,11 +216,10 @@ def build_pdf(analysis: dict, source_name: str, report_id: str, generated_at: da
     if analysis.get("summary"):
         _heading(pdf, "Overview")
         pdf.font("", 10.5)
-        pdf.set_text_color(*TEXT)
+        pdf.set_text_color(*CHARCOAL)
         pdf.multi_cell(pdf.w - 40, 6, pdf.t(analysis["summary"]), align="L", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(6)
     _heading(pdf, "Key Findings")
-    pdf.ln(2)
     for i, item in enumerate(analysis["qa"], 1):
         _qa_block(pdf, i, item)
 

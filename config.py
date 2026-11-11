@@ -51,7 +51,9 @@ VIDEO_MIME_TYPES = {
 
 # --- The fixed questions -----------------------------------------------------
 QUESTIONS = [
-    "How many speakers are there in the video?",
-    "What is the company name mentioned or implied?",
-    "What is the average salary of employees mentioned or implied?",
+    "Employee Experience: What initiatives have been implemented to improve employee satisfaction, engagement, and overall workplace experience?",
+    "Performance and Impact: What measurable improvements have resulted from the initiatives discussed?",
+    "Growth and Development: How does the organisation support continuous learning, professional development, and employee growth?",
+    "Feedback and Improvement: How is feedback collected, evaluated, and translated into meaningful improvements?",
+    "Effectiveness and Sustainability: How does the organisation ensure that its initiatives deliver long-term results and remain effective over time?",
 ]

@@ -309,17 +309,17 @@
 
         xhr.upload.addEventListener("load", () => {
           setStep(1);
-          setProgress(40, "Video uploaded. Gemini is processing audio and visual tracks...");
+          setProgress(40, "Upload complete. Reviewing audio and video...");
           // Animate progress smoothly from 40% to 92% while waiting for LLM
           let currentPct = 40;
           timer = setInterval(() => {
             if (currentPct < 75) {
               currentPct += 1.5;
-              setProgress(currentPct, "Gemini is analyzing video and generating transcript...");
+              setProgress(currentPct, "Analysing video content...");
             } else if (currentPct < 92) {
               currentPct += 0.5;
               setStep(2);
-              setProgress(currentPct, "Formatting PDF report and contextual Q&A...");
+              setProgress(currentPct, "Preparing your report...");
             }
           }, 1000);
         });
