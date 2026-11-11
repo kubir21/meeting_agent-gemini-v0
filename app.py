@@ -1,11 +1,16 @@
-"""FastAPI backend: serves the UI and the /generate-report endpoint.
+"""FastAPI backend: serves the UI, /generate-report and /send-report.
 
 Run:  python app.py      (then open http://localhost:8000)
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
+import re
+import time
 import uuid
+from collections import deque
 from pathlib import Path
 
 import uvicorn
@@ -13,9 +18,10 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 import config
-from emailer import EmailError
+from emailer import EmailError, is_valid_email, send_report
 from gemini_client import ConfigError, GeminiProcessingError
 from pipeline import run_pipeline, safe_delete_temp
 
@@ -65,7 +71,7 @@ async def generate_report(file: UploadFile = File(...)):
             raise ValueError("The uploaded file is empty.")
         log.info("Received %s (%.1f MB) -> %s", original_name, size / 1e6, temp_path.name)
 
-        result = await run_in_threadpool(run_pipeline, temp_path, original_name, True, False)
+        result = await run_in_threadpool(run_pipeline, temp_path, original_name, False)
         analysis = result["analysis"]
         return {
             "status": "success",
@@ -81,7 +87,6 @@ async def generate_report(file: UploadFile = File(...)):
             "qa": analysis["qa"],
             "transcript": analysis.get("transcript", ""),
             "pdf_base64": result["pdf_base64"],
-            "email": {"sent": result["emailed"], "recipient": result["recipient"], "note": result["email_note"]},
         }
     except ValueError as exc:
         return error(400, str(exc))
@@ -91,14 +96,64 @@ async def generate_report(file: UploadFile = File(...)):
         return error(504, str(exc))
     except GeminiProcessingError as exc:
         return error(502, str(exc))
-    except EmailError as exc:
-        return error(502, str(exc))
     except Exception as exc:
         log.exception("Unexpected error")
         return error(500, f"Unexpected error: {exc}")
     finally:
         await file.close()
         safe_delete_temp(temp_path)  # no-op if the pipeline already removed it
+
+
+class SendRequest(BaseModel):
+    email: str
+    report_id: str
+    pdf_base64: str
+    company: str = "Video Analysis Report"
+    source_file: str = ""
+
+
+_recent_sends: deque[float] = deque()
+
+
+def _rate_limited() -> bool:
+    now = time.monotonic()
+    while _recent_sends and now - _recent_sends[0] > 60:
+        _recent_sends.popleft()
+    if len(_recent_sends) >= config.SEND_LIMIT_PER_MINUTE:
+        return True
+    _recent_sends.append(now)
+    return False
+
+
+@app.post("/send-report")
+async def send_report_endpoint(req: SendRequest):
+    recipient = req.email.strip()
+    if not is_valid_email(recipient):
+        return error(400, "Please enter a valid email address.")
+    try:
+        pdf = base64.b64decode(req.pdf_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return error(400, "The report data is invalid. Please generate the report again.")
+    if not pdf.startswith(b"%PDF-"):
+        return error(400, "The report data is not a valid PDF. Please generate the report again.")
+    if len(pdf) > config.MAX_ATTACHMENT_MB * 1024 * 1024:
+        return error(400, f"The report is larger than {config.MAX_ATTACHMENT_MB} MB and cannot be emailed.")
+    if _rate_limited():
+        return error(429, "Too many emails sent. Please wait a minute and try again.")
+
+    safe_id = re.sub(r"[^\w\-]+", "_", req.report_id)[:40] or "report"
+    safe_company = re.sub(r"[^\w\-]+", "_", req.company).strip("_")[:40] or "Report"
+    try:
+        await run_in_threadpool(
+            send_report, recipient, pdf, f"Report_{safe_company}_{safe_id}.pdf",
+            req.company[:120], req.report_id[:60], req.source_file[:200],
+        )
+    except EmailError as exc:
+        return error(502, str(exc))
+    except Exception:
+        log.exception("Unexpected error while sending email")
+        return error(500, "Something went wrong while sending the email.")
+    return {"status": "success", "recipient": recipient}
 
 
 if __name__ == "__main__":

@@ -147,6 +147,38 @@ body {
 }
 .note.ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-border); }
 
+/* Email box */
+.email-box { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
+.email-label { display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 8px; }
+.email-group {
+  display: flex; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; overflow: hidden;
+  transition: border-color .15s, box-shadow .15s;
+}
+.email-group:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.email-group.invalid { border-color: #ef4444; }
+.email-group.invalid:focus-within { box-shadow: 0 0 0 3px #fee2e2; }
+.email-group input {
+  flex: 1; min-width: 0; border: 0; outline: 0; padding: 12px 14px; font: inherit; font-size: 0.93rem; background: transparent;
+}
+.email-btn {
+  width: 52px; border: 0; border-left: 1px solid var(--border); background: var(--accent); color: #fff;
+  cursor: pointer; display: grid; place-items: center; transition: background .15s, opacity .15s;
+}
+.email-btn:hover:not(:disabled) { background: var(--accent-dark); }
+.email-btn:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; }
+.icon-mail { width: 22px; height: 22px; }
+.email-spinner {
+  display: none; width: 18px; height: 18px; border-radius: 50%;
+  border: 2.5px solid rgba(255,255,255,.4); border-top-color: #fff; animation: spin .8s linear infinite;
+}
+.email-btn.loading .icon-mail { display: none; }
+.email-btn.loading .email-spinner { display: block; }
+.email-hint { margin-top: 6px; font-size: 0.78rem; color: var(--muted); }
+.email-hint.error { color: var(--err); }
+.email-status { margin-top: 10px; padding: 10px 12px; border-radius: 10px; font-size: 0.86rem; line-height: 1.45; border: 1px solid; }
+.email-status.ok { background: var(--ok-bg); color: var(--ok); border-color: var(--ok-border); }
+.email-status.err { background: var(--err-bg); color: var(--err); border-color: var(--err-border); }
+
 .section { margin: 26px 0 10px; font-size: 0.95rem; font-weight: 600; }
 .summary { margin: 0; line-height: 1.6; color: #374151; font-size: 0.93rem; }
 

@@ -84,7 +84,19 @@
             <button id="dl-pdf" class="btn btn-primary" type="button">Download Report (PDF)</button>
             <button id="dl-txt" class="btn btn-secondary" type="button">Download Transcript (.txt)</button>
           </div>
-          <div id="r-note" class="note" hidden></div>
+          <div class="email-box">
+            <label class="email-label" for="email-input">Send report by email</label>
+            <div class="email-group" id="email-group">
+              <input id="email-input" type="email" inputmode="email" autocomplete="email"
+                     placeholder="name@company.com" maxlength="254" spellcheck="false" />
+              <button id="email-send" class="email-btn" type="button" aria-label="Send report by email" disabled>
+                <svg class="icon-mail" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6.5A1.5 1.5 0 014.5 5h15A1.5 1.5 0 0121 6.5v11a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 17.5v-11zm1.6.4l7.4 5.6 7.4-5.6" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                <span class="email-spinner" aria-hidden="true"></span>
+              </button>
+            </div>
+            <div id="email-hint" class="email-hint">Sent from rk26.ftw@gmail.com</div>
+            <div id="email-status" class="email-status" role="status" hidden></div>
+          </div>
 
           <div id="r-summary-wrap" hidden>
             <h3 class="section">Overview</h3>

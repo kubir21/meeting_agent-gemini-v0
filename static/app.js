@@ -140,18 +140,7 @@
     $("r-tiles").innerHTML = tiles.map(([k, v]) =>
       `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
 
-    const note = $("r-note");
-    if (r.email && r.email.sent) {
-      note.className = "note ok";
-      note.textContent = `A copy of this report was emailed to ${r.email.recipient}.`;
-      note.hidden = false;
-    } else if (r.email && r.email.note) {
-      note.className = "note";
-      note.textContent = r.email.note;
-      note.hidden = false;
-    } else {
-      note.hidden = true;
-    }
+    resetEmailBox();
 
     $("r-summary-wrap").hidden = !r.summary;
     $("r-summary").textContent = r.summary || "";
@@ -203,6 +192,79 @@
     if (b.dataset.act === "pdf") downloadPdf(h);
     if (b.dataset.act === "txt") downloadTranscript(h);
   });
+
+  // Email section
+  const EMAIL_KEY = "video_insights_last_email_v1";
+  const EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9\-]*[A-Za-z0-9])?)*\.[A-Za-z]{2,}$/;
+  const emailInput = $("email-input"), emailBtn = $("email-send"), emailGroup = $("email-group");
+  const emailHint = $("email-hint"), emailStatus = $("email-status");
+  const HINT_DEFAULT = "Sent from rk26.ftw@gmail.com";
+  let emailSending = false;
+
+  const validEmail = (v) => v.length <= 254 && !v.includes("..") && EMAIL_RE.test(v);
+
+  function refreshEmailUi() {
+    const v = emailInput.value.trim();
+    const ok = validEmail(v);
+    const showInvalid = v.length > 0 && !ok;
+    emailGroup.classList.toggle("invalid", showInvalid);
+    emailHint.classList.toggle("error", showInvalid);
+    emailHint.textContent = showInvalid ? "Please enter a valid email address." : HINT_DEFAULT;
+    emailBtn.disabled = !ok || emailSending || !current;
+  }
+  function setEmailStatus(type, msg) {
+    emailStatus.className = `email-status ${type}`;
+    emailStatus.textContent = msg;
+    emailStatus.hidden = false;
+  }
+  function resetEmailBox() {
+    emailStatus.hidden = true;
+    emailSending = false;
+    emailBtn.classList.remove("loading");
+    emailInput.disabled = false;
+    try { emailInput.value = localStorage.getItem(EMAIL_KEY) || ""; } catch { emailInput.value = ""; }
+    refreshEmailUi();
+  }
+  async function sendEmail() {
+    const to = emailInput.value.trim();
+    if (!current || emailSending || !validEmail(to)) return;
+    emailSending = true;
+    emailStatus.hidden = true;
+    emailBtn.classList.add("loading");
+    emailInput.disabled = true;
+    refreshEmailUi();
+    try {
+      const res = await fetch("/send-report", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: to,
+          report_id: current.report_id,
+          company: current.company,
+          source_file: current.source_file || "",
+          pdf_base64: current.pdf_base64,
+        }),
+      });
+      let body = {};
+      try { body = await res.json(); } catch { /* non-JSON response */ }
+      if (!res.ok || body.status !== "success") {
+        throw new Error(body.detail || `Could not send the email (HTTP ${res.status}).`);
+      }
+      try { localStorage.setItem(EMAIL_KEY, to); } catch { /* ignore */ }
+      setEmailStatus("ok", `Report sent to ${body.recipient || to}. If you do not see it, check the spam folder.`);
+    } catch (err) {
+      const msg = err instanceof TypeError ? "Could not reach the server. Please make sure it is running." : err.message;
+      setEmailStatus("err", msg);
+    } finally {
+      emailSending = false;
+      emailBtn.classList.remove("loading");
+      emailInput.disabled = false;
+      refreshEmailUi();
+    }
+  }
+  emailInput.addEventListener("input", () => { emailStatus.hidden = true; refreshEmailUi(); });
+  emailInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendEmail(); } });
+  emailBtn.addEventListener("click", sendEmail);
 
   // Submit
   form.addEventListener("submit", async (e) => {

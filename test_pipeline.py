@@ -1,13 +1,14 @@
-"""Run the full pipeline on the sample video in the project root (no browser).
+"""Run the pipeline on the sample video in the project root (no browser).
 
 Usage:
-    python test_pipeline.py              # Gemini -> PDF -> email
-    python test_pipeline.py --no-email   # skip email, keep the PDF in temp/
+    python test_pipeline.py                       # analyse + build PDF, keep PDF in temp/
+    python test_pipeline.py --email you@site.com  # also email the PDF to that address
     python test_pipeline.py --video path/to/other.mp4
 """
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import logging
 import shutil
@@ -16,6 +17,7 @@ import uuid
 from pathlib import Path
 
 import config
+from emailer import EmailError, is_valid_email, send_report
 from pipeline import run_pipeline
 
 
@@ -35,9 +37,12 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--no-email", action="store_true", help="Skip sending the email and keep the PDF.")
+    parser.add_argument("--email", metavar="ADDRESS", help="Email the generated PDF to this address.")
     parser.add_argument("--video", type=Path, help="Video to use (default: first video in project root).")
     args = parser.parse_args()
+
+    if args.email and not is_valid_email(args.email):
+        sys.exit(f"Not a valid email address: {args.email}")
 
     original = (args.video or find_sample_video()).resolve()
     if not original.is_file():
@@ -50,7 +55,7 @@ def main() -> int:
     print(f"Model: {config.GEMINI_MODEL}\n")
 
     try:
-        result = run_pipeline(temp_copy, original.name, send_email=not args.no_email, keep_pdf=args.no_email)
+        result = run_pipeline(temp_copy, original.name, keep_pdf=True)
     except Exception as exc:
         print(f"\nPIPELINE FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1
@@ -58,10 +63,16 @@ def main() -> int:
     print("\n================ PARSED JSON ================")
     print(json.dumps(result["analysis"], indent=2, ensure_ascii=False))
     print("=============================================\n")
-    if args.no_email:
-        print(f"Email skipped (--no-email). PDF kept at: {result['pdf_path']}")
-    else:
-        print(f"Report emailed to {result['recipient']}.")
+    print(f"PDF kept at: {result['pdf_path']}")
+
+    if args.email:
+        try:
+            send_report(args.email, base64.b64decode(result["pdf_base64"]), f"{result['report_id']}.pdf",
+                        result["company"], result["report_id"], original.name)
+            print(f"Report emailed to {args.email} via {config.EMAIL_PROVIDER}.")
+        except EmailError as exc:
+            print(f"Email failed: {exc}", file=sys.stderr)
+            return 2
     return 0
 
 

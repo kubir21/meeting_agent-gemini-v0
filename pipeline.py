@@ -1,4 +1,7 @@
-"""Shared pipeline: Gemini analysis -> PDF -> optional email -> cleanup (always)."""
+"""Shared pipeline: Gemini analysis -> PDF -> cleanup (always).
+
+Emailing is a separate, user-triggered step (see /send-report in app.py).
+"""
 from __future__ import annotations
 
 import base64
@@ -8,7 +11,6 @@ from datetime import datetime
 from pathlib import Path
 
 import config
-from emailer import send_report
 from gemini_client import analyze_video, delete_remote_file
 from pdf_report import build_pdf, clean_company
 
@@ -34,28 +36,20 @@ def make_report_id(now: datetime) -> str:
     return f"VAR-{now:%Y%m%d}-{uuid.uuid4().hex[:4].upper()}"
 
 
-def run_pipeline(video_path: Path, source_name: str, send_email: bool = True, keep_pdf: bool = False) -> dict:
-    """Run the full pipeline on a *temporary copy* of a video inside temp/.
+def run_pipeline(video_path: Path, source_name: str, keep_pdf: bool = False) -> dict:
+    """Run analysis + PDF on a *temporary copy* of a video inside temp/.
 
     The temp video, the PDF (unless keep_pdf) and the Gemini remote file are
-    always cleaned up, even if a step fails. Email failure is non-fatal.
+    always cleaned up, even if a step fails.
     """
     gemini_ref: dict = {"name": None}
     pdf_path: Path | None = None
-    email_sent, email_note = False, None
     try:
         analysis = analyze_video(Path(video_path), gemini_ref)
         generated_at = datetime.now().astimezone()
         report_id = make_report_id(generated_at)
         pdf_path = build_pdf(analysis, source_name, report_id, generated_at)
         pdf_bytes = pdf_path.read_bytes()
-        if send_email:
-            try:
-                send_report(pdf_path, source_name)
-                email_sent = True
-            except Exception as exc:
-                log.warning("Email delivery failed, continuing: %s", exc)
-                email_note = "Email delivery is currently unavailable. Please download the report below."
         return {
             "analysis": analysis,
             "report_id": report_id,
@@ -63,9 +57,6 @@ def run_pipeline(video_path: Path, source_name: str, send_email: bool = True, ke
             "company": clean_company(analysis.get("company_name", "")),
             "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
             "pdf_path": str(pdf_path) if keep_pdf else None,
-            "emailed": email_sent,
-            "email_note": email_note,
-            "recipient": config.RECIPIENT_EMAIL if email_sent else None,
         }
     finally:
         safe_delete_temp(Path(video_path))
