@@ -14,6 +14,21 @@
   const HISTORY_MAX = 5;
   let selectedFile = null, timer = null, current = null;
 
+  // Theme toggle (initial theme is set by the inline script in index.html)
+  const themeBtn = $("theme-toggle");
+  function syncThemeBtn() {
+    const dark = document.documentElement.dataset.theme === "dark";
+    themeBtn.setAttribute("aria-label", dark ? "Switch to light mode" : "Switch to dark mode");
+    themeBtn.title = themeBtn.getAttribute("aria-label");
+  }
+  themeBtn.addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    document.documentElement.dataset.theme = next;
+    try { localStorage.setItem("vi_theme", next); } catch { /* ignore */ }
+    syncThemeBtn();
+  });
+  syncThemeBtn();
+
   $("today").textContent = new Date().toLocaleDateString(undefined, {
     weekday: "long", day: "numeric", month: "long", year: "numeric",
   });
@@ -75,7 +90,7 @@
   function setLoading(on) {
     btn.disabled = on || !selectedFile;
     btn.classList.toggle("loading", on);
-    btnLabel.textContent = on ? "Generating..." : "Generate Report";
+    btnLabel.textContent = on ? "Generating..." : "Generate report";
     input.disabled = on;
     stepsEl.hidden = !on;
     progressContainer.hidden = !on;
@@ -169,6 +184,7 @@
   function renderHistory() {
     const list = loadHistory();
     historyPanel.hidden = list.length === 0;
+    $("nav-history").hidden = list.length === 0;
     historyList.innerHTML = list.map((h) => `
       <li data-id="${esc(h.report_id)}">
         <div class="h-main">
