@@ -423,7 +423,7 @@
         body: JSON.stringify({ key, upload_id, parts }),
       });
       const compData = await parseResponsePayload(compRes, "Complete failed");
-      if (!compRes.ok || compData.status !== "success") {
+      if (!compRes.ok || (compData.status !== "success" && compData.status !== "completed")) {
         throw new Error(getErrorMessage(compRes, compData, "Failed to finalize cloud storage upload."));
       }
 

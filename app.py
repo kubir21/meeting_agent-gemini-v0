@@ -160,7 +160,7 @@ def s3_complete_upload(req: S3CompleteRequest):
         log.info("Completing S3 upload for key %s with %d parts", req.key, len(req.parts))
         parts_dicts = [p.model_dump() for p in req.parts]
         res = s3_client.complete_multipart_upload(req.key, req.upload_id, parts_dicts)
-        return {"status": "success", **res}
+        return {"status": "success", "key": res.get("key"), "location": res.get("location")}
     except Exception as exc:
         log.exception("Error completing S3 upload for key %s: %s", req.key, exc)
         return error(500, str(exc))
