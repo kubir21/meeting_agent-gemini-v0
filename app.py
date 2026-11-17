@@ -34,6 +34,20 @@ app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
 
 
 @app.middleware("http")
+async def fix_vercel_path(request: Request, call_next):
+    # Normalize paths rewritten by Vercel serverless functions
+    path = request.scope.get("path", "")
+    for prefix in ("/api/index.py", "/api/index", "/api"):
+        if path.startswith(prefix):
+            sub = path[len(prefix):]
+            new_path = sub if sub.startswith("/") else ("/" + sub if sub else "/")
+            request.scope["path"] = new_path
+            request.scope["raw_path"] = new_path.encode("ascii")
+            break
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def no_cache_ui(request: Request, call_next):
     response = await call_next(request)
     if request.url.path == "/" or request.url.path.startswith("/static/"):
