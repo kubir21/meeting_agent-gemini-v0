@@ -3,3 +3,6 @@ venv/
 temp/
 __pycache__/
 *.pyc
+.vercel/
+setup_aws.py
+brag-output/

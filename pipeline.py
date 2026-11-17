@@ -55,6 +55,7 @@ def run_pipeline(video_path: Path, source_name: str, keep_pdf: bool = False) -> 
             "report_id": report_id,
             "generated_at": generated_at.isoformat(timespec="seconds"),
             "company": clean_company(analysis.get("company_name", "")),
+            "category": str(analysis.get("company_category") or "Not mentioned"),
             "pdf_base64": base64.b64encode(pdf_bytes).decode("ascii"),
             "pdf_path": str(pdf_path) if keep_pdf else None,
         }
@@ -63,3 +64,17 @@ def run_pipeline(video_path: Path, source_name: str, keep_pdf: bool = False) -> 
         if pdf_path and not keep_pdf:
             safe_delete_temp(pdf_path)
         delete_remote_file(gemini_ref["name"])
+
+
+def run_pipeline_s3(s3_key: str, original_name: str, keep_pdf: bool = False) -> dict:
+    """Download video from S3 to temp, execute pipeline, and ensure S3 cleanup."""
+    from s3_client import download_s3_to_temp, delete_s3_object
+
+    ext = Path(original_name).suffix or ".mp4"
+    temp_path = config.TEMP_DIR / f"{uuid.uuid4().hex}{ext}"
+    try:
+        download_s3_to_temp(s3_key, temp_path)
+        return run_pipeline(temp_path, original_name, keep_pdf=keep_pdf)
+    finally:
+        delete_s3_object(s3_key)
+

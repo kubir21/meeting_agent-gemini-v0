@@ -331,6 +331,120 @@ a { color: inherit; }
 }
 .qa-a { margin-top: 4px; line-height: 1.6; }
 .qa-e { margin-top: 10px; font-size: 0.84rem; color: var(--muted); }
+.qa-ts {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  background: var(--support-soft);
+  color: var(--support);
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-family: var(--f-mono);
+  font-weight: 600;
+}
+
+/* ---------- Options & Toggles ---------- */
+.options-group {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 14px 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+}
+.toggle-control {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.toggle-control input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.toggle-track {
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--line);
+  position: relative;
+  flex-shrink: 0;
+  margin-top: 2px;
+  transition: background-color .2s;
+}
+.toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--fg);
+  transition: transform .2s, background-color .2s;
+}
+.toggle-control input:checked + .toggle-track {
+  background: var(--accent);
+}
+.toggle-control input:checked + .toggle-track::after {
+  transform: translateX(16px);
+  background: var(--on-accent);
+}
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+}
+.toggle-text strong {
+  color: var(--fg);
+  font-size: 0.88rem;
+}
+.toggle-text small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  margin-top: 2px;
+}
+
+/* ---------- Timeline List ---------- */
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.timeline-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  font-size: 0.88rem;
+}
+.timeline-ts {
+  font-family: var(--f-mono);
+  font-size: 0.8rem;
+  color: var(--support);
+  font-weight: 700;
+  white-space: nowrap;
+}
+.timeline-title {
+  flex-grow: 1;
+  color: var(--fg);
+}
+.timeline-badge {
+  font-size: 0.72rem;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
 
 /* ---------- History ---------- */
 .history { margin-top: 20px; animation-delay: .8s; }

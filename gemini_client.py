@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 from pydantic import BaseModel, Field
 
 import config
@@ -31,43 +31,65 @@ class GeminiProcessingError(RuntimeError):
 
 
 # --- Response schema ----------------------------------------------------------
+class TimelineSegment(BaseModel):
+    timestamp_range: str = Field(description="e.g. '00:00 - 05:10'")
+    topic: str = Field(description="Topic discussed in this segment")
+    has_slides: bool = Field(default=False, description="Whether presentation slides or screen shares are visible")
+
+
 class QAItem(BaseModel):
     question: str = Field(description="The question, copied verbatim.")
-    answer: str = Field(description="Concise answer based strictly on the video.")
-    reasoning: str = Field(description="One or two sentences of evidence from the video.")
+    answer: str = Field(description="Concise answer synthesized from spoken dialogue and on-screen slides.")
+    reasoning: str = Field(description="Evidence citing visual slides and spoken quotes.")
+    timestamp: str = Field(default="", description="Relevant timestamp range in the video, e.g. '05:10 - 08:30'.")
 
 
 class VideoAnalysis(BaseModel):
     company_name: str = Field(description="Company name mentioned or implied, or 'Not mentioned'.")
+    company_category: str = Field(default="Not mentioned", description="Industry or category of the company (e.g. IT Services, Healthcare, Retail), or 'Not mentioned'.")
     video_duration: str = Field(description="Approximate video length as mm:ss.")
     language: str = Field(description="Main language(s) spoken, e.g. 'Hindi', 'English', 'Hindi and English'.")
     summary: str = Field(description="Neutral 2 to 3 sentence overview of the video.")
-    transcript: str = Field(description="Full verbatim transcript with speaker labels.")
+    timeline: list[TimelineSegment] = Field(default_factory=list, description="Topical meeting timeline segments with timestamps")
+    transcript: str = Field(description="Full verbatim transcript with speaker labels and timestamps.")
     qa: list[QAItem]
 
 
-PROMPT_TEMPLATE = """You are a meticulous video analyst. Watch AND listen to the entire attached video.
+PROMPT_TEMPLATE = """You are an expert agentic video analyst. Conduct a comprehensive, two-stage evaluation of the attached meeting video and presentation:
+
+STAGE 1: TIMELINE & TRANSCRIPTION SCAN
+1. Transcribe the meeting dialogue verbatim from start to finish with speaker labels and timestamp references (e.g. "[00:15 - 00:42] Speaker 1: ...").
+2. Map the meeting into topical timeline segments with start-to-end timestamps, noting whether visual presentation slides or screen shares are active.
+
+STAGE 2: TARGETED VISUAL GROUNDING & SIX PILLARS SYNTHESIS
+1. Locate the exact timestamp segments where presentation slides or visuals detailing the Six Pillars of Employee Wellbeing appear.
+2. Cross-reference spoken dialogue against on-screen slide bullet points, graphics, and figures.
+3. For each question, synthesize a detailed answer, provide the exact relevant timestamp window in "timestamp", and cite the supporting oral/visual evidence (referencing slide titles where visible) in "reasoning".
 
 Return ONLY a single JSON object (no markdown, no commentary) with exactly this shape:
 {{
   "company_name": "<company name mentioned or implied, or 'Not mentioned'>",
+  "company_category": "<category or industry of the company, e.g. IT Services, Healthcare, Retail, Technology, or 'Not mentioned'>",
   "video_duration": "<approximate video length as mm:ss>",
   "language": "<main language(s) spoken>",
   "summary": "<neutral 2 to 3 sentence overview of the video>",
-  "transcript": "<full exact transcript>",
+  "timeline": [
+    {{"timestamp_range": "<e.g. 00:00 - 05:10>", "topic": "<topic title>", "has_slides": <true/false>}}
+  ],
+  "transcript": "<full exact transcript with timestamps and speaker labels>",
   "qa": [
-    {{"question": "<question 1 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 2 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 3 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 4 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 5 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}}
+    {{"question": "<question 1 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 05:10 - 08:30>"}},
+    {{"question": "<question 2 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 08:30 - 14:15>"}},
+    {{"question": "<question 3 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 14:15 - 19:40>"}},
+    {{"question": "<question 4 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 19:40 - 24:10>"}},
+    {{"question": "<question 5 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 24:10 - 28:50>"}}
   ]
 }}
 
 TRANSCRIPT RULES
 - Transcribe every spoken word exactly as spoken, in order, from start to end. Do not summarise, paraphrase, or translate.
 - Keep the original language/script of each utterance (e.g. Hindi stays in Hindi, Hinglish stays as spoken).
-- Put each speaker turn on its own line, prefixed with a speaker label: use the person's name if it is stated or shown on screen, otherwise "Speaker 1:", "Speaker 2:", etc.
+- Put each speaker turn on its own line, prefixed with a speaker label and timestamp: use the person's name if stated or shown on screen, otherwise "Speaker 1:", "Speaker 2:", etc.
 - Mark non-speech sounds only if meaningful, in square brackets, e.g. [laughter], [music].
 - If there is no speech at all, set transcript to "[No speech detected]".
 
@@ -75,11 +97,11 @@ QUESTIONS - answer each strictly from the video's audio and visual context:
 {questions}
 
 ANSWER RULES
-- Base answers only on what is said or shown in the video. Do not use outside knowledge to invent facts.
+- Base answers only on what is said or shown in the video. Inspect both spoken audio and presentation slides carefully, especially when identifying the Six Pillars of Employee Wellbeing, company category, and specific initiatives. Do not use outside knowledge to invent facts.
 - If an answer is not stated but can reasonably be inferred from context, give it and begin the answer with "Implied: ".
 - If it is neither stated nor implied, answer exactly "{not_mentioned}".
 - Write each answer as a clear, professional summary of 2 to 4 sentences. Include specific figures, programmes or examples when they are stated.
-- Put supporting evidence (a short paraphrase or quote and, if possible, where it occurs) in "reasoning".
+- Put supporting evidence (citing the slide title, visual graphic, or direct quote) in "reasoning", and populate the corresponding timestamp window in "timestamp".
 """
 
 
@@ -100,12 +122,15 @@ _CLIENT: genai.Client | None = None
 
 
 def get_client() -> genai.Client:
-    """Return one shared client (a throwaway client gets closed on garbage collection)."""
+    """Return one shared client with bounded HTTP timeouts."""
     global _CLIENT
     if not config.GEMINI_API_KEY or config.GEMINI_API_KEY.startswith("paste-"):
         raise ConfigError("GEMINI_API_KEY is not set. Add it to the .env file (see .env.example).")
     if _CLIENT is None:
-        _CLIENT = genai.Client(api_key=config.GEMINI_API_KEY)
+        _CLIENT = genai.Client(
+            api_key=config.GEMINI_API_KEY,
+            http_options=types.HttpOptions(client_args={"timeout": 60.0}),
+        )
     return _CLIENT
 
 
@@ -194,16 +219,30 @@ def normalize_analysis(data: dict) -> dict:
                 "question": question,
                 "answer": str(item.get("answer") or NOT_MENTIONED).strip(),
                 "reasoning": str(item.get("reasoning") or "").strip(),
+                "timestamp": str(item.get("timestamp") or "").strip(),
             }
         )
     def _text(key: str, default: str) -> str:
         return str(data.get(key) or "").strip() or default
 
+    timeline_raw = data.get("timeline") or []
+    timeline = []
+    if isinstance(timeline_raw, list):
+        for t in timeline_raw:
+            if isinstance(t, dict):
+                timeline.append({
+                    "timestamp_range": str(t.get("timestamp_range") or "").strip(),
+                    "topic": str(t.get("topic") or "").strip(),
+                    "has_slides": bool(t.get("has_slides")),
+                })
+
     return {
         "company_name": _text("company_name", "Not mentioned"),
+        "company_category": _text("company_category", "Not mentioned"),
         "video_duration": _text("video_duration", "Not available"),
         "language": _text("language", "Not available"),
         "summary": _text("summary", ""),
+        "timeline": timeline,
         "transcript": transcript,
         "qa": qa,
     }
@@ -215,16 +254,77 @@ def analyze_video(path: Path, ref: dict) -> dict:
     client = get_client()
     file_obj = upload_and_wait(client, path, ref)
 
-    log.info("Requesting analysis from %s...", config.GEMINI_MODEL)
-    response = client.models.generate_content(
-        model=config.GEMINI_MODEL,
-        contents=[file_obj, build_prompt()],
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-            response_schema=VideoAnalysis,
-            temperature=0.1,
-        ),
-    )
+    candidate_models = [config.GEMINI_MODEL]
+    fallback = getattr(config, "GEMINI_FALLBACK_MODEL", "").strip()
+    if fallback and fallback != config.GEMINI_MODEL:
+        candidate_models.append(fallback)
+
+    response = None
+    used_model = config.GEMINI_MODEL
+    last_err = None
+
+    for m_idx, current_model in enumerate(candidate_models):
+        has_fallback = (m_idx < len(candidate_models) - 1)
+        max_attempts = 1 if has_fallback else 2
+
+        log.info("Requesting analysis from %s (attempt limit: %d)...", current_model, max_attempts)
+
+        model_succeeded = False
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = client.models.generate_content(
+                    model=current_model,
+                    contents=[file_obj, build_prompt()],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=VideoAnalysis,
+                        temperature=0.1,
+                    ),
+                )
+                used_model = current_model
+                model_succeeded = True
+                log.info("Successfully received analysis from %s!", current_model)
+                break
+            except errors.APIError as e:
+                last_err = e
+                status_code = getattr(e, "code", None)
+                err_msg = getattr(e, "message", str(e))
+                is_transient = (status_code in (503, 429, 500) or "high demand" in err_msg.lower() or "unavailable" in err_msg.lower())
+                if is_transient and has_fallback:
+                    log.warning("Gemini %s is experiencing high demand (status %s). Switching immediately to fallback model %s...",
+                                current_model, status_code, candidate_models[m_idx + 1])
+                    break
+                elif is_transient and attempt < max_attempts:
+                    backoff = attempt * 3
+                    log.warning("Gemini %s returned %s on attempt %d/%d ('%s'). Retrying in %ds...",
+                                current_model, status_code, attempt, max_attempts, err_msg, backoff)
+                    time.sleep(backoff)
+                else:
+                    if not has_fallback:
+                        raise GeminiProcessingError(f"Gemini API error ({status_code}): {err_msg}") from e
+                    break
+            except Exception as e:
+                last_err = e
+                err_str = str(e).lower()
+                is_transient = ("503" in err_str or "429" in err_str or "high demand" in err_str or "unavailable" in err_str or "deadline" in err_str or "timeout" in err_str or "timed out" in err_str)
+                if is_transient and has_fallback:
+                    log.warning("Gemini %s transient error / timeout (%s). Switching immediately to fallback model %s...",
+                                current_model, e, candidate_models[m_idx + 1])
+                    break
+                elif is_transient and attempt < max_attempts:
+                    backoff = attempt * 3
+                    log.warning("Gemini transient error on attempt %d/%d (%s). Retrying in %ds...", attempt, max_attempts, e, backoff)
+                    time.sleep(backoff)
+                else:
+                    if not has_fallback:
+                        raise
+                    break
+
+        if model_succeeded:
+            break
+
+    if response is None:
+        raise GeminiProcessingError(f"Gemini analysis failed across models ({', '.join(candidate_models)}): {last_err}")
 
     parsed = getattr(response, "parsed", None)
     if isinstance(parsed, VideoAnalysis):
@@ -232,7 +332,7 @@ def analyze_video(path: Path, ref: dict) -> dict:
     else:
         data = parse_model_json(response.text or "")
     analysis = normalize_analysis(data)
-    analysis["model"] = config.GEMINI_MODEL
+    analysis["model"] = used_model
 
     usage = getattr(response, "usage_metadata", None)
     if usage:

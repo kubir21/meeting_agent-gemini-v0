@@ -143,14 +143,15 @@
     emptyEl.hidden = true;
     reportEl.hidden = false;
     $("r-company").textContent = r.company;
-    $("r-sub").textContent = `${fmtDateTime(r.generated_at)}  |  ${r.source_file}`;
+    const cat = r.category && r.category !== "Not mentioned" ? r.category : "Employee Wellbeing Report";
+    $("r-sub").textContent = cat;
     $("r-id").textContent = r.report_id;
 
     const tiles = [
-      ["Date", new Date(r.generated_at).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" })],
-      ["Time", new Date(r.generated_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })],
+      ["Category", r.category || "Not mentioned"],
       ["Duration", r.meta?.duration || "Not available"],
       ["Language", r.meta?.language || "Not available"],
+      ["Report ID", r.report_id],
     ];
     $("r-tiles").innerHTML = tiles.map(([k, v]) =>
       `<div class="tile"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div></div>`).join("");
@@ -159,9 +160,30 @@
 
     $("r-summary-wrap").hidden = !r.summary;
     $("r-summary").textContent = r.summary || "";
+
+    const timelineWrap = $("r-timeline-wrap");
+    const timelineEl = $("r-timeline");
+    if (timelineWrap && timelineEl) {
+      if (r.timeline && r.timeline.length > 0) {
+        timelineWrap.hidden = false;
+        timelineEl.innerHTML = r.timeline.map((item) => `
+          <div class="timeline-item">
+            <span class="timeline-ts">${esc(item.timestamp_range)}</span>
+            <span class="timeline-title">${esc(item.topic)}</span>
+            ${item.has_slides ? '<span class="timeline-badge">Presentation Slides</span>' : ''}
+          </div>
+        `).join("");
+      } else {
+        timelineWrap.hidden = true;
+      }
+    }
+
     $("r-qa").innerHTML = (r.qa || []).map((q, i) => `
       <div class="qa-card">
-        <div class="qa-label q">Question ${i + 1}</div>
+        <div class="qa-label q">
+          Question ${i + 1}
+          ${q.timestamp ? `<span class="qa-ts">${esc(q.timestamp)}</span>` : ""}
+        </div>
         <div class="qa-q">${esc(q.question)}</div>
         <div class="qa-label a">Answer ${i + 1}</div>
         <div class="qa-a">${esc(q.answer)}</div>
@@ -189,7 +211,7 @@
       <li data-id="${esc(h.report_id)}">
         <div class="h-main">
           <div class="h-title">${esc(h.company)}</div>
-          <div class="h-meta">${esc(fmtDateTime(h.generated_at))}  |  ${esc(h.source_file)}  |  ${esc(h.report_id)}</div>
+          <div class="h-meta">${esc(h.category || "Wellbeing Report")}  |  ${esc(h.report_id)}</div>
         </div>
         <div class="h-actions">
           <button class="btn btn-secondary btn-sm" data-act="view" type="button">View</button>
@@ -282,6 +304,324 @@
   emailInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sendEmail(); } });
   emailBtn.addEventListener("click", sendEmail);
 
+  // S3 Multipart Upload helpers
+  const PART_SIZE = 10 * 1024 * 1024; // 10MB per part
+
+  async function checkAppConfig() {
+    try {
+      const res = await fetch("/app-config");
+      if (res.ok) return await res.json();
+    } catch { /* ignore */ }
+    return { s3_enabled: false };
+  }
+
+  function uploadPartWithProgress(url, chunk, onProgress) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("PUT", url);
+      xhr.upload.addEventListener("progress", (ev) => {
+        if (ev.lengthComputable) onProgress(ev.loaded);
+      });
+      xhr.addEventListener("load", () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          const etag = xhr.getResponseHeader("ETag");
+          if (!etag) {
+            reject(new Error("Missing ETag header from S3. Please verify S3 CORS includes ExposeHeaders: ['ETag']."));
+          } else {
+            resolve(etag.replace(/^"|"$/g, ""));
+          }
+        } else {
+          reject(new Error(`S3 upload error for part (HTTP ${xhr.status}).`));
+        }
+      });
+      xhr.addEventListener("error", () => reject(new Error("Network error during S3 chunk upload.")));
+      xhr.addEventListener("abort", () => reject(new Error("Upload aborted.")));
+      xhr.send(chunk);
+    });
+  }
+
+  async function uploadToS3AndAnalyze(file) {
+    // 1. Initiate upload
+    const initRes = await fetch("/s3/initiate-upload", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename: file.name, content_type: file.type || "video/mp4" }),
+    });
+    const initData = await initRes.json();
+    if (!initRes.ok || initData.status !== "success") {
+      throw new Error(initData.detail || "Failed to initiate cloud storage upload.");
+    }
+    const { key, upload_id } = initData;
+
+    try {
+      // 2. Upload chunks in parallel/sequence
+      const totalSize = file.size;
+      const numParts = Math.max(1, Math.ceil(totalSize / PART_SIZE));
+      const parts = [];
+      const partLoaded = new Array(numParts).fill(0);
+
+      const updateOverallProgress = () => {
+        const totalUploaded = partLoaded.reduce((a, b) => a + b, 0);
+        const uploadPct = Math.min(42, (totalUploaded / totalSize) * 42);
+        setProgress(uploadPct, `Uploading directly to cloud storage (${fmtSize(totalUploaded)} / ${fmtSize(totalSize)})...`);
+      };
+
+      for (let i = 1; i <= numParts; i++) {
+        const start = (i - 1) * PART_SIZE;
+        const end = Math.min(start + PART_SIZE, totalSize);
+        const chunk = file.slice(start, end);
+
+        // Sign part URL
+        const signRes = await fetch("/s3/sign-part", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key, upload_id, part_number: i }),
+        });
+        const signData = await signRes.json();
+        if (!signRes.ok || signData.status !== "success") {
+          throw new Error(signData.detail || `Failed to sign upload part ${i}.`);
+        }
+
+        // Upload chunk
+        const etag = await uploadPartWithProgress(signData.url, chunk, (loaded) => {
+          partLoaded[i - 1] = loaded;
+          updateOverallProgress();
+        });
+        partLoaded[i - 1] = chunk.size;
+        updateOverallProgress();
+        parts.push({ PartNumber: i, ETag: etag });
+      }
+
+      // 3. Complete multipart upload
+      setProgress(44, "Finalizing cloud storage transfer...");
+      const compRes = await fetch("/s3/complete-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, upload_id, parts }),
+      });
+      const compData = await compRes.json();
+      if (!compRes.ok || compData.status !== "success") {
+        throw new Error(compData.detail || "Failed to finalize cloud storage upload.");
+      }
+
+      // 4. Trigger Analysis
+      setStep(1);
+      setProgress(45, "Reviewing audio, video, and presentation slides...");
+      let currentPct = 45;
+      timer = setInterval(() => {
+        if (currentPct < 75) {
+          currentPct += 1.5;
+          setProgress(currentPct, "Analysing video and identifying Six Pillars...");
+        } else if (currentPct < 92) {
+          currentPct += 0.5;
+          setStep(2);
+          setProgress(currentPct, "Synthesising findings and generating PDF...");
+        }
+      }, 1000);
+
+      const analyzeRes = await fetch("/analyze-s3-video", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, original_filename: file.name }),
+      });
+      clearInterval(timer);
+      const analyzeData = await analyzeRes.json();
+      if (!analyzeRes.ok || analyzeData.status !== "success") {
+        throw new Error(analyzeData.detail || `Analysis failed (HTTP ${analyzeRes.status}).`);
+      }
+
+      setProgress(100, "Done!");
+      setStep(3);
+      return analyzeData;
+    } catch (err) {
+      fetch("/s3/abort-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, upload_id }),
+      }).catch(() => {});
+      throw err;
+    }
+  }
+
+  function uploadFallbackLocal(file) {
+    const data = new FormData();
+    data.append("file", file);
+
+    const xhr = new XMLHttpRequest();
+    return new Promise((resolve, reject) => {
+      xhr.upload.addEventListener("progress", (ev) => {
+        if (ev.lengthComputable) {
+          const uploadPct = (ev.loaded / ev.total) * 40;
+          setProgress(uploadPct, `Uploading video (${fmtSize(ev.loaded)} / ${fmtSize(ev.total)})...`);
+          if (uploadPct >= 38) setStep(1);
+        }
+      });
+
+      xhr.upload.addEventListener("load", () => {
+        setStep(1);
+        setProgress(40, "Upload complete. Reviewing audio and video...");
+        let currentPct = 40;
+        timer = setInterval(() => {
+          if (currentPct < 75) {
+            currentPct += 1.5;
+            setProgress(currentPct, "Analysing video content...");
+          } else if (currentPct < 92) {
+            currentPct += 0.5;
+            setStep(2);
+            setProgress(currentPct, "Preparing your report...");
+          }
+        }, 1000);
+      });
+
+      xhr.addEventListener("load", () => {
+        clearInterval(timer);
+        try {
+          const body = JSON.parse(xhr.responseText || "{}");
+          if (xhr.status >= 200 && xhr.status < 300 && body.status === "success") {
+            setProgress(100, "Done!");
+            setStep(3);
+            resolve(body);
+          } else {
+            reject(new Error(body.detail || `Server error (HTTP ${xhr.status}).`));
+          }
+        } catch {
+          reject(new Error(`Server error (HTTP ${xhr.status}).`));
+        }
+      });
+
+      xhr.addEventListener("error", () => {
+        clearInterval(timer);
+        reject(new Error("Could not reach the server. Please make sure it is running."));
+      });
+
+      xhr.addEventListener("abort", () => {
+        clearInterval(timer);
+        reject(new Error("Upload aborted."));
+      });
+
+      xhr.open("POST", "/generate-report");
+      xhr.send(data);
+    });
+  }
+
+  // Phase 2: Client-side 360p video compression
+  async function compressVideoTo360p(file, onProgress, signal) {
+    if (typeof MediaRecorder === "undefined" || !file || file.size < 15 * 1024 * 1024) {
+      return file;
+    }
+    const candidates = [
+      "video/webm;codecs=vp8,opus",
+      "video/webm;codecs=vp9,opus",
+      "video/webm",
+      "video/mp4",
+    ];
+    let mimeType = "";
+    for (const c of candidates) {
+      if (MediaRecorder.isTypeSupported(c)) {
+        mimeType = c;
+        break;
+      }
+    }
+    if (!mimeType) return file;
+
+    return new Promise((resolve) => {
+      let aborted = false;
+      let animId = null;
+      const video = document.createElement("video");
+      video.preload = "metadata";
+      video.src = URL.createObjectURL(file);
+      video.muted = true;
+      video.playsInline = true;
+
+      function cleanup() {
+        aborted = true;
+        if (animId) cancelAnimationFrame(animId);
+        try { video.pause(); } catch {}
+        try { URL.revokeObjectURL(video.src); } catch {}
+      }
+
+      if (signal) {
+        signal.addEventListener("abort", () => {
+          cleanup();
+          resolve(file);
+        });
+      }
+
+      video.onloadedmetadata = async () => {
+        if (aborted) return;
+        if (video.videoHeight <= 360) {
+          cleanup();
+          resolve(file);
+          return;
+        }
+
+        const targetHeight = 360;
+        const targetWidth = Math.round((video.videoWidth / video.videoHeight) * 360) & ~1;
+        const canvas = document.createElement("canvas");
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        const ctx = canvas.getContext("2d");
+
+        const canvasStream = canvas.captureStream ? canvas.captureStream(8) : null;
+        if (!canvasStream) {
+          cleanup();
+          resolve(file);
+          return;
+        }
+
+        try {
+          const recorder = new MediaRecorder(canvasStream, {
+            mimeType,
+            videoBitsPerSecond: 350000,
+          });
+          const chunks = [];
+          recorder.ondataavailable = (e) => {
+            if (e.data && e.data.size > 0) chunks.push(e.data);
+          };
+          recorder.onstop = () => {
+            cleanup();
+            if (aborted) {
+              resolve(file);
+              return;
+            }
+            const blob = new Blob(chunks, { type: mimeType });
+            if (blob.size > 0 && blob.size < file.size) {
+              const ext = mimeType.includes("mp4") ? ".mp4" : ".webm";
+              const newName = file.name.replace(/\.[^.]+$/, "") + "_360p" + ext;
+              resolve(new File([blob], newName, { type: mimeType }));
+            } else {
+              resolve(file);
+            }
+          };
+
+          recorder.start(500);
+          video.playbackRate = 4.0;
+          await video.play();
+
+          const draw = () => {
+            if (aborted || video.paused || video.ended) return;
+            ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
+            if (onProgress && video.duration && !aborted) {
+              const pct = (video.currentTime / video.duration) * 100;
+              onProgress(pct);
+            }
+            if (!aborted) animId = requestAnimationFrame(draw);
+          };
+          animId = requestAnimationFrame(draw);
+
+          video.onended = () => {
+            try { recorder.stop(); } catch {}
+          };
+          video.onerror = () => { cleanup(); resolve(file); };
+        } catch {
+          cleanup();
+          resolve(file);
+        }
+      };
+      video.onerror = () => { cleanup(); resolve(file); };
+    });
+  }
+
   // Submit
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -289,72 +629,34 @@
     alertBox.hidden = true;
     setLoading(true);
 
-    const data = new FormData();
-    data.append("file", selectedFile);
-
     try {
-      const xhr = new XMLHttpRequest();
+      let fileToUpload = selectedFile;
+      const compressToggle = $("compress-toggle");
+      if (compressToggle && compressToggle.checked && selectedFile.size > 20 * 1024 * 1024) {
+        setProgress(3, "Optimizing video resolution to 360p...");
+        const abortCtrl = new AbortController();
+        try {
+          const compTask = compressVideoTo360p(selectedFile, (pct) => {
+            setProgress(3 + (pct * 0.12), `Optimizing video to 360p (${Math.round(pct)}%)...`);
+          }, abortCtrl.signal);
+          const timeoutTask = new Promise((res) => setTimeout(() => {
+            abortCtrl.abort();
+            res(selectedFile);
+          }, 15000));
+          fileToUpload = await Promise.race([compTask, timeoutTask]);
+        } catch {
+          abortCtrl.abort();
+          fileToUpload = selectedFile;
+        }
+      }
 
-      const responsePromise = new Promise((resolve, reject) => {
-        xhr.upload.addEventListener("progress", (ev) => {
-          if (ev.lengthComputable) {
-            // Upload takes first 0% - 40% of overall progress
-            const uploadPct = (ev.loaded / ev.total) * 40;
-            setProgress(uploadPct, `Uploading video (${fmtSize(ev.loaded)} / ${fmtSize(ev.total)})...`);
-            if (uploadPct >= 38) {
-              setStep(1);
-            }
-          }
-        });
-
-        xhr.upload.addEventListener("load", () => {
-          setStep(1);
-          setProgress(40, "Upload complete. Reviewing audio and video...");
-          // Animate progress smoothly from 40% to 92% while waiting for LLM
-          let currentPct = 40;
-          timer = setInterval(() => {
-            if (currentPct < 75) {
-              currentPct += 1.5;
-              setProgress(currentPct, "Analysing video content...");
-            } else if (currentPct < 92) {
-              currentPct += 0.5;
-              setStep(2);
-              setProgress(currentPct, "Preparing your report...");
-            }
-          }, 1000);
-        });
-
-        xhr.addEventListener("load", () => {
-          clearInterval(timer);
-          try {
-            const body = JSON.parse(xhr.responseText || "{}");
-            if (xhr.status >= 200 && xhr.status < 300 && body.status === "success") {
-              setProgress(100, "Done!");
-              setStep(3);
-              resolve(body);
-            } else {
-              reject(new Error(body.detail || `Server error (HTTP ${xhr.status}).`));
-            }
-          } catch (err) {
-            reject(new Error(`Server error (HTTP ${xhr.status}).`));
-          }
-        });
-
-        xhr.addEventListener("error", () => {
-          clearInterval(timer);
-          reject(new Error("Could not reach the server. Please make sure it is running."));
-        });
-
-        xhr.addEventListener("abort", () => {
-          clearInterval(timer);
-          reject(new Error("Upload aborted."));
-        });
-      });
-
-      xhr.open("POST", "/generate-report");
-      xhr.send(data);
-
-      const body = await responsePromise;
+      const cfg = await checkAppConfig();
+      let body;
+      if (cfg && cfg.s3_enabled) {
+        body = await uploadToS3AndAnalyze(fileToUpload);
+      } else {
+        body = await uploadFallbackLocal(fileToUpload);
+      }
       renderReport(body);
       saveHistory(body);
     } catch (err) {

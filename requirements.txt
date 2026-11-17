@@ -7,3 +7,4 @@ fpdf2>=2.8
 uharfbuzz>=0.39
 pydantic>=2.7
 requests>=2.31
+boto3>=1.34

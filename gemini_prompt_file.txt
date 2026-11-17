@@ -1,25 +1,38 @@
-You are a meticulous video analyst. Watch AND listen to the entire attached video.
+You are an expert agentic video analyst. Conduct a comprehensive, two-stage evaluation of the attached meeting video and presentation:
+
+STAGE 1: TIMELINE & TRANSCRIPTION SCAN
+1. Transcribe the meeting dialogue verbatim from start to finish with speaker labels and timestamp references (e.g. "[00:15 - 00:42] Speaker 1: ...").
+2. Map the meeting into topical timeline segments with start-to-end timestamps, noting whether visual presentation slides or screen shares are active.
+
+STAGE 2: TARGETED VISUAL GROUNDING & SIX PILLARS SYNTHESIS
+1. Locate the exact timestamp segments where presentation slides or visuals detailing the Six Pillars of Employee Wellbeing appear.
+2. Cross-reference spoken dialogue against on-screen slide bullet points, graphics, and figures.
+3. For each question, synthesize a detailed answer, provide the exact relevant timestamp window in "timestamp", and cite the supporting oral/visual evidence (referencing slide titles where visible) in "reasoning".
 
 Return ONLY a single JSON object (no markdown, no commentary) with exactly this shape:
 {{
   "company_name": "<company name mentioned or implied, or 'Not mentioned'>",
+  "company_category": "<category or industry of the company, e.g. IT Services, Healthcare, Retail, Technology, or 'Not mentioned'>",
   "video_duration": "<approximate video length as mm:ss>",
   "language": "<main language(s) spoken>",
   "summary": "<neutral 2 to 3 sentence overview of the video>",
-  "transcript": "<full exact transcript>",
+  "timeline": [
+    {{"timestamp_range": "<e.g. 00:00 - 05:10>", "topic": "<topic title>", "has_slides": <true/false>}}
+  ],
+  "transcript": "<full exact transcript with timestamps and speaker labels>",
   "qa": [
-    {{"question": "<question 1 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 2 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 3 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 4 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}},
-    {{"question": "<question 5 verbatim>", "answer": "<answer>", "reasoning": "<evidence>"}}
+    {{"question": "<question 1 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 05:10 - 08:30>"}},
+    {{"question": "<question 2 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 08:30 - 14:15>"}},
+    {{"question": "<question 3 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 14:15 - 19:40>"}},
+    {{"question": "<question 4 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 19:40 - 24:10>"}},
+    {{"question": "<question 5 verbatim>", "answer": "<answer>", "reasoning": "<evidence citing slide/quote>", "timestamp": "<e.g. 24:10 - 28:50>"}}
   ]
 }}
 
 TRANSCRIPT RULES
 - Transcribe every spoken word exactly as spoken, in order, from start to end. Do not summarise, paraphrase, or translate.
 - Keep the original language/script of each utterance (e.g. Hindi stays in Hindi, Hinglish stays as spoken).
-- Put each speaker turn on its own line, prefixed with a speaker label: use the person's name if it is stated or shown on screen, otherwise "Speaker 1:", "Speaker 2:", etc.
+- Put each speaker turn on its own line, prefixed with a speaker label and timestamp: use the person's name if stated or shown on screen, otherwise "Speaker 1:", "Speaker 2:", etc.
 - Mark non-speech sounds only if meaningful, in square brackets, e.g. [laughter], [music].
 - If there is no speech at all, set transcript to "[No speech detected]".
 
@@ -27,8 +40,8 @@ QUESTIONS - answer each strictly from the video's audio and visual context:
 {questions}
 
 ANSWER RULES
-- Base answers only on what is said or shown in the video. Do not use outside knowledge to invent facts.
+- Base answers only on what is said or shown in the video. Inspect both spoken audio and presentation slides carefully, especially when identifying the Six Pillars of Employee Wellbeing, company category, and specific initiatives. Do not use outside knowledge to invent facts.
 - If an answer is not stated but can reasonably be inferred from context, give it and begin the answer with "Implied: ".
 - If it is neither stated nor implied, answer exactly "{not_mentioned}".
 - Write each answer as a clear, professional summary of 2 to 4 sentences. Include specific figures, programmes or examples when they are stated.
-- Put supporting evidence (a short paraphrase or quote and, if possible, where it occurs) in "reasoning".
+- Put supporting evidence (citing the slide title, visual graphic, or direct quote) in "reasoning", and populate the corresponding timestamp window in "timestamp".

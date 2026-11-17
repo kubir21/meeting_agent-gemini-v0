@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@500&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=20261112c" />
+  <link rel="stylesheet" href="/static/styles.css?v=20261116b" />
 </head>
 <body>
   <header class="topbar">
@@ -61,6 +61,26 @@
           <div id="file-chip" class="file-chip" hidden>
             <span id="file-name" class="file-name"></span>
             <span id="file-size" class="file-size"></span>
+          </div>
+
+          <div class="options-group">
+            <label class="toggle-control" title="Target 360p resolution. Slashes upload bandwidth while preserving sharp slide readability.">
+              <input type="checkbox" id="compress-toggle" checked />
+              <span class="toggle-track"></span>
+              <span class="toggle-text">
+                <strong>Smart Compress to 360p</strong>
+                <small>Recommended: Faster uploads, legible slide text</small>
+              </span>
+            </label>
+
+            <label class="toggle-control" title="Two-stage agentic scan: maps meeting timeline first, then visually grounds the Six Pillars on key slides.">
+              <input type="checkbox" id="agentic-toggle" checked />
+              <span class="toggle-track"></span>
+              <span class="toggle-text">
+                <strong>Agentic Timeline Grounding</strong>
+                <small>High accuracy: Timestamps & targeted slide verification</small>
+              </span>
+            </label>
           </div>
 
           <button id="generate-btn" type="submit" class="btn btn-primary" disabled>
@@ -126,11 +146,16 @@
           </div>
 
           <div id="r-summary-wrap" hidden>
-            <h3 class="section">Overview</h3>
+            <h3 class="section">Executive Overview</h3>
             <p id="r-summary" class="summary"></p>
           </div>
 
-          <h3 class="section">Key findings</h3>
+          <div id="r-timeline-wrap" hidden>
+            <h3 class="section">Meeting Timeline &amp; Presentation Slides</h3>
+            <div id="r-timeline" class="timeline-list"></div>
+          </div>
+
+          <h3 class="section">Six Pillars & Key Findings</h3>
           <div id="r-qa"></div>
         </div>
       </section>
@@ -148,6 +173,6 @@
     <span>Reports are generated per upload. History stays in this browser.</span>
   </footer>
 
-  <script src="/static/app.js?v=20261112c"></script>
+  <script src="/static/app.js?v=20261117a"></script>
 </body>
 </html>

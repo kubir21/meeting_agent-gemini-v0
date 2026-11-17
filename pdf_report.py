@@ -109,20 +109,36 @@ class ReportPDF(FPDF):
         self.cell(0, 6, self.t(f"Page {self.page_no()} of {{nb}}"), align="R")
 
 
-def _title_block(pdf: ReportPDF, company: str) -> None:
+def _title_block(pdf: ReportPDF, company: str, logo_path: Path | None = None) -> None:
     pdf.set_fill_color(*CHARCOAL)
-    pdf.rect(0, 0, pdf.w, 44, style="F")
+    pdf.rect(0, 0, pdf.w, 46, style="F")
     pdf.set_fill_color(*AMBER)
-    pdf.rect(0, 44, pdf.w, 1.6, style="F")
-    pdf.set_xy(20, 12)
+    pdf.rect(0, 46, pdf.w, 1.6, style="F")
+
+    # Customer logo (if provided or placed in static/ or project root)
+    logo = logo_path
+    if not logo:
+        for candidate in [config.STATIC_DIR / "logo.png", config.BASE_DIR / "logo.png", config.STATIC_DIR / "customer_logo.png"]:
+            if candidate.is_file():
+                logo = candidate
+                break
+
+    if logo and logo.is_file():
+        try:
+            pdf.image(str(logo), x=pdf.w - 55, y=9, w=35)
+        except Exception as exc:
+            log.warning("Could not render logo %s: %s", logo, exc)
+
+    pdf.set_xy(20, 11)
     pdf.font("B", 8.5)
     pdf.set_text_color(*AMBER)
-    pdf.cell(0, 5, pdf.t("VIDEO ANALYSIS REPORT"), new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, pdf.t("EMPLOYEE WELLBEING ANALYSIS REPORT"), new_x="LMARGIN", new_y="NEXT")
     pdf.set_x(20)
     pdf.set_text_color(*OFFWHITE)
-    pdf.font("B", 24 if len(company) <= 30 else 18)
-    pdf.multi_cell(pdf.w - 40, 10, pdf.t(company), align="L", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_y(56)
+    title_w = pdf.w - 75 if logo else pdf.w - 40
+    pdf.font("B", 22 if len(company) <= 30 else 17)
+    pdf.multi_cell(title_w, 9, pdf.t(company), align="L", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_y(58)
 
 
 def _details_block(pdf: ReportPDF, rows: list[tuple[str, str]]) -> None:
@@ -185,7 +201,8 @@ def _qa_block(pdf: ReportPDF, n: int, item: dict) -> None:
         pdf.font("", 8.5)
         pdf.set_text_color(*MUTED)
         pdf.set_x(32)
-        pdf.multi_cell(w - 12, 4.8, pdf.t(f"Evidence: {item['reasoning']}"), align="L",
+        ts_label = f"[{item['timestamp']}] " if item.get("timestamp") else ""
+        pdf.multi_cell(w - 12, 4.8, pdf.t(f"Evidence {ts_label}: {item['reasoning']}"), align="L",
                        new_x="LMARGIN", new_y="NEXT")
         pdf.set_fill_color(*SLATE_LIGHT)
         pdf.rect(29, y0, 0.6, pdf.get_y() - y0, style="F")
@@ -205,21 +222,38 @@ def build_pdf(analysis: dict, source_name: str, report_id: str, generated_at: da
     pdf = ReportPDF()
     pdf.add_page()
     _title_block(pdf, company)
+    category = str(analysis.get("company_category") or "Not mentioned")
     _details_block(pdf, [
-        ("Report date", generated_at.strftime("%d %B %Y")),
-        ("Report time", _time_label(generated_at)),
-        ("Source video", source_name),
+        ("Company", company),
+        ("Category", category),
         ("Video duration", analysis.get("video_duration", "Not available")),
         ("Language", analysis.get("language", "Not available")),
         ("Report ID", report_id),
     ])
     if analysis.get("summary"):
-        _heading(pdf, "Overview")
+        _heading(pdf, "Executive Overview")
         pdf.font("", 10.5)
         pdf.set_text_color(*CHARCOAL)
         pdf.multi_cell(pdf.w - 40, 6, pdf.t(analysis["summary"]), align="L", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(6)
-    _heading(pdf, "Key Findings")
+
+    timeline = analysis.get("timeline") or []
+    if timeline:
+        _heading(pdf, "Meeting Timeline & Slide Framework")
+        for seg in timeline:
+            ts = seg.get("timestamp_range", "")
+            top = seg.get("topic", "")
+            slide_flag = "  (Presentation Slides)" if seg.get("has_slides") else ""
+            if ts and top:
+                pdf.font("B", 9)
+                pdf.set_text_color(*TEAL)
+                pdf.cell(32, 5.5, pdf.t(ts), align="L")
+                pdf.font("", 9)
+                pdf.set_text_color(*CHARCOAL)
+                pdf.cell(0, 5.5, pdf.t(f"{top}{slide_flag}"), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(6)
+
+    _heading(pdf, "Six Pillars & Key Findings")
     for i, item in enumerate(analysis["qa"], 1):
         _qa_block(pdf, i, item)
 

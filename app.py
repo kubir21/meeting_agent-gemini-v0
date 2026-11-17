@@ -23,7 +23,8 @@ from pydantic import BaseModel
 import config
 from emailer import EmailError, is_valid_email, send_report
 from gemini_client import ConfigError, GeminiProcessingError
-from pipeline import run_pipeline, safe_delete_temp
+from pipeline import run_pipeline, run_pipeline_s3, safe_delete_temp
+import s3_client
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("app")
@@ -53,7 +54,139 @@ def index() -> FileResponse:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "model": config.GEMINI_MODEL}
+    return {"status": "ok", "model": config.GEMINI_MODEL, "s3_enabled": config.S3_ENABLED}
+
+
+@app.get("/app-config")
+def app_config() -> dict:
+    return {
+        "s3_enabled": config.S3_ENABLED,
+        "max_upload_mb": config.MAX_UPLOAD_MB,
+        "allowed_extensions": sorted(list(config.VIDEO_EXTENSIONS)),
+    }
+
+
+# --- S3 Direct Upload Endpoints ----------------------------------------------
+class S3InitiateRequest(BaseModel):
+    filename: str
+    content_type: str = "video/mp4"
+
+
+class S3SignPartRequest(BaseModel):
+    key: str
+    upload_id: str
+    part_number: int
+
+
+class S3CompletePartItem(BaseModel):
+    PartNumber: int
+    ETag: str
+
+
+class S3CompleteRequest(BaseModel):
+    key: str
+    upload_id: str
+    parts: list[S3CompletePartItem]
+
+
+class S3AbortRequest(BaseModel):
+    key: str
+    upload_id: str
+
+
+class S3AnalyzeRequest(BaseModel):
+    key: str
+    original_filename: str
+
+
+@app.post("/s3/initiate-upload")
+def s3_initiate_upload(req: S3InitiateRequest):
+    if not config.S3_ENABLED:
+        return error(503, "AWS S3 storage is not configured on the server.")
+    ext = Path(req.filename).suffix.lower()
+    if ext not in config.VIDEO_EXTENSIONS:
+        return error(400, f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(config.VIDEO_EXTENSIONS))}")
+    try:
+        data = s3_client.initiate_multipart_upload(req.filename, req.content_type)
+        return {"status": "success", **data}
+    except Exception as exc:
+        log.exception("Error initiating S3 upload")
+        return error(500, str(exc))
+
+
+@app.post("/s3/sign-part")
+def s3_sign_part(req: S3SignPartRequest):
+    if not config.S3_ENABLED:
+        return error(503, "AWS S3 storage is not configured on the server.")
+    try:
+        url = s3_client.sign_part_upload(req.key, req.upload_id, req.part_number)
+        return {"status": "success", "url": url, "part_number": req.part_number}
+    except Exception as exc:
+        log.exception("Error signing S3 part")
+        return error(500, str(exc))
+
+
+@app.post("/s3/complete-upload")
+def s3_complete_upload(req: S3CompleteRequest):
+    if not config.S3_ENABLED:
+        return error(503, "AWS S3 storage is not configured on the server.")
+    try:
+        parts_dicts = [p.model_dump() for p in req.parts]
+        res = s3_client.complete_multipart_upload(req.key, req.upload_id, parts_dicts)
+        return {"status": "success", **res}
+    except Exception as exc:
+        log.exception("Error completing S3 upload")
+        return error(500, str(exc))
+
+
+@app.post("/s3/abort-upload")
+def s3_abort_upload(req: S3AbortRequest):
+    if not config.S3_ENABLED:
+        return error(503, "AWS S3 storage is not configured on the server.")
+    s3_client.abort_multipart_upload(req.key, req.upload_id)
+    return {"status": "success", "message": "Upload aborted."}
+
+
+@app.post("/analyze-s3-video")
+async def analyze_s3_video(req: S3AnalyzeRequest):
+    if not config.S3_ENABLED:
+        return error(503, "AWS S3 storage is not configured on the server.")
+    original_name = Path(req.original_filename or "video.mp4").name
+    ext = Path(original_name).suffix.lower()
+    if ext not in config.VIDEO_EXTENSIONS:
+        return error(400, f"Unsupported file type '{ext}'. Allowed: {', '.join(sorted(config.VIDEO_EXTENSIONS))}")
+
+    try:
+        result = await run_in_threadpool(run_pipeline_s3, req.key, original_name, False)
+        analysis = result["analysis"]
+        return {
+            "status": "success",
+            "report_id": result["report_id"],
+            "generated_at": result["generated_at"],
+            "company": result["company"],
+            "category": result.get("category") or analysis.get("company_category", "Not mentioned"),
+            "source_file": original_name,
+            "meta": {
+                "duration": analysis.get("video_duration", ""),
+                "language": analysis.get("language", ""),
+            },
+            "summary": analysis.get("summary", ""),
+            "timeline": analysis.get("timeline", []),
+            "qa": analysis["qa"],
+            "transcript": analysis.get("transcript", ""),
+            "pdf_base64": result["pdf_base64"],
+        }
+    except ValueError as exc:
+        return error(400, str(exc))
+    except ConfigError as exc:
+        return error(500, str(exc))
+    except TimeoutError as exc:
+        return error(504, str(exc))
+    except GeminiProcessingError as exc:
+        return error(502, str(exc))
+    except Exception as exc:
+        log.exception("Unexpected error analyzing S3 video")
+        return error(500, f"Unexpected error: {exc}")
 
 
 @app.post("/generate-report")
@@ -86,12 +219,14 @@ async def generate_report(file: UploadFile = File(...)):
             "report_id": result["report_id"],
             "generated_at": result["generated_at"],
             "company": result["company"],
+            "category": result.get("category") or analysis.get("company_category", "Not mentioned"),
             "source_file": original_name,
             "meta": {
                 "duration": analysis.get("video_duration", ""),
                 "language": analysis.get("language", ""),
             },
             "summary": analysis.get("summary", ""),
+            "timeline": analysis.get("timeline", []),
             "qa": analysis["qa"],
             "transcript": analysis.get("transcript", ""),
             "pdf_base64": result["pdf_base64"],
