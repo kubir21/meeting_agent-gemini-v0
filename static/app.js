@@ -315,6 +315,28 @@
     return { s3_enabled: false };
   }
 
+  async function parseResponsePayload(res, fallbackText) {
+    let data = {};
+    try {
+      data = await res.json();
+    } catch (_) {
+      const text = await res.text().catch(() => "");
+      data = { detail: text || `HTTP ${res.status} ${res.statusText || fallbackText}` };
+    }
+    return data;
+  }
+
+  function getErrorMessage(res, data, defaultMsg) {
+    if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+    if (Array.isArray(data.detail)) {
+      return data.detail.map(d => (typeof d === "object" ? d.msg || JSON.stringify(d) : String(d))).join("; ");
+    }
+    if (data.error && typeof data.error.message === "string") return data.error.message;
+    if (typeof data.message === "string" && data.message.trim()) return data.message;
+    if (typeof data.error === "string" && data.error.trim()) return data.error;
+    return `${defaultMsg} (HTTP ${res.status})`;
+  }
+
   function uploadPartWithProgress(url, chunk, onProgress) {
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
@@ -324,11 +346,12 @@
       });
       xhr.addEventListener("load", () => {
         if (xhr.status >= 200 && xhr.status < 300) {
-          const etag = xhr.getResponseHeader("ETag");
+          const rawEtag = xhr.getResponseHeader("ETag") || xhr.getResponseHeader("etag") || "";
+          const etag = rawEtag.trim().replace(/^"|"$/g, "");
           if (!etag) {
             reject(new Error("Missing ETag header from S3. Please verify S3 CORS includes ExposeHeaders: ['ETag']."));
           } else {
-            resolve(etag.replace(/^"|"$/g, ""));
+            resolve(etag);
           }
         } else {
           reject(new Error(`S3 upload error for part (HTTP ${xhr.status}).`));
@@ -347,9 +370,9 @@
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename: file.name, content_type: file.type || "video/mp4" }),
     });
-    const initData = await initRes.json();
+    const initData = await parseResponsePayload(initRes, "Initiate failed");
     if (!initRes.ok || initData.status !== "success") {
-      throw new Error(initData.detail || "Failed to initiate cloud storage upload.");
+      throw new Error(getErrorMessage(initRes, initData, "Failed to initiate cloud storage upload."));
     }
     const { key, upload_id } = initData;
 
@@ -377,9 +400,9 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ key, upload_id, part_number: i }),
         });
-        const signData = await signRes.json();
+        const signData = await parseResponsePayload(signRes, "Sign part failed");
         if (!signRes.ok || signData.status !== "success") {
-          throw new Error(signData.detail || `Failed to sign upload part ${i}.`);
+          throw new Error(getErrorMessage(signRes, signData, `Failed to sign upload part ${i}.`));
         }
 
         // Upload chunk
@@ -399,9 +422,9 @@
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, upload_id, parts }),
       });
-      const compData = await compRes.json();
+      const compData = await parseResponsePayload(compRes, "Complete failed");
       if (!compRes.ok || compData.status !== "success") {
-        throw new Error(compData.detail || "Failed to finalize cloud storage upload.");
+        throw new Error(getErrorMessage(compRes, compData, "Failed to finalize cloud storage upload."));
       }
 
       // 4. Trigger Analysis
@@ -425,9 +448,9 @@
         body: JSON.stringify({ key, original_filename: file.name }),
       });
       clearInterval(timer);
-      const analyzeData = await analyzeRes.json();
+      const analyzeData = await parseResponsePayload(analyzeRes, "Analysis failed");
       if (!analyzeRes.ok || analyzeData.status !== "success") {
-        throw new Error(analyzeData.detail || `Analysis failed (HTTP ${analyzeRes.status}).`);
+        throw new Error(getErrorMessage(analyzeRes, analyzeData, "Analysis failed."));
       }
 
       setProgress(100, "Done!");

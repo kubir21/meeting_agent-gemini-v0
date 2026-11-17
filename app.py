@@ -13,12 +13,14 @@ import uuid
 from collections import deque
 from pathlib import Path
 
+from typing import Any
+
 import uvicorn
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 import config
 from emailer import EmailError, is_valid_email, send_report
@@ -93,8 +95,18 @@ class S3SignPartRequest(BaseModel):
 
 
 class S3CompletePartItem(BaseModel):
-    PartNumber: int
-    ETag: str
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+    PartNumber: int = Field(default=0, alias="part_number")
+    ETag: str = Field(default="", alias="etag")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            pn = data.get("PartNumber") or data.get("part_number") or data.get("partNumber") or 0
+            et = data.get("ETag") or data.get("etag") or ""
+            return {"PartNumber": int(pn), "ETag": str(et)}
+        return data
 
 
 class S3CompleteRequest(BaseModel):
@@ -145,11 +157,12 @@ def s3_complete_upload(req: S3CompleteRequest):
     if not config.S3_ENABLED:
         return error(503, "AWS S3 storage is not configured on the server.")
     try:
+        log.info("Completing S3 upload for key %s with %d parts", req.key, len(req.parts))
         parts_dicts = [p.model_dump() for p in req.parts]
         res = s3_client.complete_multipart_upload(req.key, req.upload_id, parts_dicts)
         return {"status": "success", **res}
     except Exception as exc:
-        log.exception("Error completing S3 upload")
+        log.exception("Error completing S3 upload for key %s: %s", req.key, exc)
         return error(500, str(exc))
 
 
