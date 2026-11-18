@@ -33,8 +33,8 @@ S3_ENABLED = bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and S3_BUCKET_NAME
 
 # --- Gemini ------------------------------------------------------------------
 # Change the model here (or set GEMINI_MODEL in .env).
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
-GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.6-flash").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.8-flash").strip()
+GEMINI_FALLBACK_MODEL = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.5-flash-lite").strip()
 FILE_PROCESSING_TIMEOUT_S = 300   # max wait for uploaded video to become ACTIVE
 POLL_INTERVAL_S = 3
 
