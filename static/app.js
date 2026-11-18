@@ -8,11 +8,17 @@
   const progressLabel = $("progress-label"), progressPct = $("progress-pct");
   const emptyEl = $("empty"), reportEl = $("report");
   const historyPanel = $("history-panel"), historyList = $("history-list");
+  const cancelBtn = $("cancel-btn");
+  const clearReportBtn = $("clear-report-btn"), rClearBtn = $("r-clear-btn");
+  const clearHistoryBtn = $("clear-history-btn");
 
   const ALLOWED = [".mp4", ".mov", ".webm", ".mkv", ".avi"];
   const HISTORY_KEY = "video_insights_history_v1";
   const HISTORY_MAX = 5;
   let selectedFile = null, timer = null, current = null;
+  let currentGenerationAbortCtrl = null;
+  let activeXhr = null;
+  let activeS3Context = null;
 
   // Theme toggle (initial theme is set by the inline script in index.html)
   const themeBtn = $("theme-toggle");
@@ -96,12 +102,63 @@
     input.disabled = on;
     stepsEl.hidden = !on;
     progressContainer.hidden = !on;
+    if (cancelBtn) cancelBtn.hidden = !on;
     clearInterval(timer);
     if (on) {
       setProgress(0, "Starting upload...");
       setStep(0);
     }
   }
+
+  function cancelGeneration() {
+    if (currentGenerationAbortCtrl) {
+      currentGenerationAbortCtrl.abort();
+    }
+    if (activeXhr) {
+      try { activeXhr.abort(); } catch (_) {}
+      activeXhr = null;
+    }
+    if (activeS3Context) {
+      fetch("/s3/abort-upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(activeS3Context),
+      }).catch(() => {});
+      activeS3Context = null;
+    }
+    clearInterval(timer);
+    setLoading(false);
+    setProgress(0, "Cancelled");
+    showAlert("info", "Document generation was cancelled.");
+  }
+  if (cancelBtn) cancelBtn.addEventListener("click", cancelGeneration);
+
+  function clearCurrentReport() {
+    current = null;
+    reportEl.hidden = true;
+    emptyEl.hidden = false;
+
+    // Reset file input & dropzone back to normal
+    selectedFile = null;
+    input.value = "";
+    chip.hidden = true;
+    dropzone.hidden = false;
+    btn.disabled = true;
+
+    // Reset progress & alerts
+    stepsEl.hidden = true;
+    progressContainer.hidden = true;
+    alertBox.hidden = true;
+    if (cancelBtn) cancelBtn.hidden = true;
+
+    // Reset email box
+    resetEmailBox();
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  if (clearReportBtn) clearReportBtn.addEventListener("click", clearCurrentReport);
+  if (rClearBtn) rClearBtn.addEventListener("click", clearCurrentReport);
 
   // Downloads
   function saveBlob(name, blob) {
@@ -212,6 +269,17 @@
     }
     renderHistory();
   }
+  function deleteHistoryItem(id) {
+    const list = loadHistory().filter((x) => x.report_id !== id);
+    try {
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+    } catch { /* ignore */ }
+    renderHistory();
+    if (current && current.report_id === id) {
+      clearCurrentReport();
+    }
+  }
+
   function renderHistory() {
     const list = loadHistory();
     historyPanel.hidden = list.length === 0;
@@ -226,6 +294,7 @@
           <button class="btn btn-secondary btn-sm" data-act="view" type="button">View</button>
           <button class="btn btn-secondary btn-sm" data-act="pdf" type="button">PDF</button>
           <button class="btn btn-secondary btn-sm" data-act="txt" type="button">Transcript</button>
+          <button class="btn btn-danger btn-sm" data-act="del" type="button" title="Delete from history" aria-label="Delete">Delete</button>
         </div>
       </li>`).join("");
   }
@@ -233,12 +302,22 @@
     const b = e.target.closest("button[data-act]");
     if (!b) return;
     const id = b.closest("li").dataset.id;
+    if (b.dataset.act === "del") {
+      deleteHistoryItem(id);
+      return;
+    }
     const h = loadHistory().find((x) => x.report_id === id);
     if (!h) return;
     if (b.dataset.act === "view") { renderReport(h); window.scrollTo({ top: 0, behavior: "smooth" }); }
     if (b.dataset.act === "pdf") downloadPdf(h);
     if (b.dataset.act === "txt") downloadTranscript(h);
   });
+  if (clearHistoryBtn) {
+    clearHistoryBtn.addEventListener("click", () => {
+      try { localStorage.removeItem(HISTORY_KEY); } catch {}
+      renderHistory();
+    });
+  }
 
   // Email section
   const EMAIL_KEY = "video_insights_last_email_v1";
@@ -346,14 +425,25 @@
     return `${defaultMsg} (HTTP ${res.status})`;
   }
 
-  function uploadPartWithProgress(url, chunk, onProgress) {
+  function uploadPartWithProgress(url, chunk, onProgress, signal) {
     return new Promise((resolve, reject) => {
+      if (signal?.aborted) return reject(new DOMException("Upload aborted", "AbortError"));
       const xhr = new XMLHttpRequest();
+      activeXhr = xhr;
+
+      const onAbort = () => { try { xhr.abort(); } catch {} };
+      if (signal) signal.addEventListener("abort", onAbort, { once: true });
+      const cleanup = () => {
+        if (activeXhr === xhr) activeXhr = null;
+        if (signal) signal.removeEventListener("abort", onAbort);
+      };
+
       xhr.open("PUT", url);
       xhr.upload.addEventListener("progress", (ev) => {
         if (ev.lengthComputable) onProgress(ev.loaded);
       });
       xhr.addEventListener("load", () => {
+        cleanup();
         if (xhr.status >= 200 && xhr.status < 300) {
           const rawEtag = xhr.getResponseHeader("ETag") || xhr.getResponseHeader("etag") || "";
           const etag = rawEtag.trim().replace(/^"|"$/g, "");
@@ -366,24 +456,34 @@
           reject(new Error(`S3 upload error for part (HTTP ${xhr.status}).`));
         }
       });
-      xhr.addEventListener("error", () => reject(new Error("Network error during S3 chunk upload.")));
-      xhr.addEventListener("abort", () => reject(new Error("Upload aborted.")));
+      xhr.addEventListener("error", () => {
+        cleanup();
+        reject(new Error("Network error during S3 chunk upload."));
+      });
+      xhr.addEventListener("abort", () => {
+        cleanup();
+        reject(new DOMException("Upload aborted.", "AbortError"));
+      });
       xhr.send(chunk);
     });
   }
 
-  async function uploadToS3AndAnalyze(file) {
+  async function uploadToS3AndAnalyze(file, signal) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+
     // 1. Initiate upload
     const initRes = await fetch("/s3/initiate-upload", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filename: file.name, content_type: file.type || "video/mp4" }),
+      signal,
     });
     const initData = await parseResponsePayload(initRes, "Initiate failed");
     if (!initRes.ok || initData.status !== "success") {
       throw new Error(getErrorMessage(initRes, initData, "Failed to initiate cloud storage upload."));
     }
     const { key, upload_id } = initData;
+    activeS3Context = { key, upload_id };
 
     try {
       // 2. Upload chunks in parallel/sequence
@@ -399,6 +499,7 @@
       };
 
       for (let i = 1; i <= numParts; i++) {
+        if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
         const start = (i - 1) * PART_SIZE;
         const end = Math.min(start + PART_SIZE, totalSize);
         const chunk = file.slice(start, end);
@@ -408,6 +509,7 @@
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ key, upload_id, part_number: i }),
+          signal,
         });
         const signData = await parseResponsePayload(signRes, "Sign part failed");
         if (!signRes.ok || signData.status !== "success") {
@@ -418,18 +520,20 @@
         const etag = await uploadPartWithProgress(signData.url, chunk, (loaded) => {
           partLoaded[i - 1] = loaded;
           updateOverallProgress();
-        });
+        }, signal);
         partLoaded[i - 1] = chunk.size;
         updateOverallProgress();
         parts.push({ PartNumber: i, ETag: etag });
       }
 
       // 3. Complete multipart upload
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       setProgress(44, "Finalizing cloud storage transfer...");
       const compRes = await fetch("/s3/complete-upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, upload_id, parts }),
+        signal,
       });
       const compData = await parseResponsePayload(compRes, "Complete failed");
       if (!compRes.ok || (compData.status !== "success" && compData.status !== "completed")) {
@@ -455,6 +559,7 @@
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, original_filename: file.name }),
+        signal,
       });
       clearInterval(timer);
       const analyzeData = await parseResponsePayload(analyzeRes, "Analysis failed");
@@ -464,22 +569,36 @@
 
       setProgress(100, "Done!");
       setStep(3);
+      activeS3Context = null;
       return analyzeData;
     } catch (err) {
-      fetch("/s3/abort-upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key, upload_id }),
-      }).catch(() => {});
+      if (activeS3Context) {
+        fetch("/s3/abort-upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(activeS3Context),
+        }).catch(() => {});
+        activeS3Context = null;
+      }
       throw err;
     }
   }
 
-  function uploadFallbackLocal(file) {
+  function uploadFallbackLocal(file, signal) {
+    if (signal?.aborted) return Promise.reject(new DOMException("Upload aborted.", "AbortError"));
     const data = new FormData();
     data.append("file", file);
 
     const xhr = new XMLHttpRequest();
+    activeXhr = xhr;
+
+    const onAbort = () => { try { xhr.abort(); } catch {} };
+    if (signal) signal.addEventListener("abort", onAbort, { once: true });
+    const cleanup = () => {
+      if (activeXhr === xhr) activeXhr = null;
+      if (signal) signal.removeEventListener("abort", onAbort);
+    };
+
     return new Promise((resolve, reject) => {
       xhr.upload.addEventListener("progress", (ev) => {
         if (ev.lengthComputable) {
@@ -506,6 +625,7 @@
       });
 
       xhr.addEventListener("load", () => {
+        cleanup();
         clearInterval(timer);
         try {
           const body = JSON.parse(xhr.responseText || "{}");
@@ -522,13 +642,15 @@
       });
 
       xhr.addEventListener("error", () => {
+        cleanup();
         clearInterval(timer);
         reject(new Error("Could not reach the server. Please make sure it is running."));
       });
 
       xhr.addEventListener("abort", () => {
+        cleanup();
         clearInterval(timer);
-        reject(new Error("Upload aborted."));
+        reject(new DOMException("Upload aborted.", "AbortError"));
       });
 
       xhr.open("POST", "/generate-report");
@@ -661,39 +783,54 @@
     alertBox.hidden = true;
     setLoading(true);
 
+    currentGenerationAbortCtrl = new AbortController();
+    const { signal } = currentGenerationAbortCtrl;
+
     try {
       let fileToUpload = selectedFile;
       const compressToggle = $("compress-toggle");
       if (compressToggle && compressToggle.checked && selectedFile.size > 20 * 1024 * 1024) {
         setProgress(3, "Optimizing video resolution to 360p...");
-        const abortCtrl = new AbortController();
+        const compAbort = new AbortController();
+        const onSignalAbort = () => compAbort.abort();
+        signal.addEventListener("abort", onSignalAbort, { once: true });
         try {
           const compTask = compressVideoTo360p(selectedFile, (pct) => {
             setProgress(3 + (pct * 0.12), `Optimizing video to 360p (${Math.round(pct)}%)...`);
-          }, abortCtrl.signal);
+          }, compAbort.signal);
           const timeoutTask = new Promise((res) => setTimeout(() => {
-            abortCtrl.abort();
+            compAbort.abort();
             res(selectedFile);
           }, 15000));
           fileToUpload = await Promise.race([compTask, timeoutTask]);
         } catch {
-          abortCtrl.abort();
+          compAbort.abort();
           fileToUpload = selectedFile;
+        } finally {
+          signal.removeEventListener("abort", onSignalAbort);
         }
       }
+
+      if (signal.aborted) throw new DOMException("Aborted", "AbortError");
 
       const cfg = await checkAppConfig();
       let body;
       if (cfg && cfg.s3_enabled) {
-        body = await uploadToS3AndAnalyze(fileToUpload);
+        body = await uploadToS3AndAnalyze(fileToUpload, signal);
       } else {
-        body = await uploadFallbackLocal(fileToUpload);
+        body = await uploadFallbackLocal(fileToUpload, signal);
       }
       renderReport(body);
       saveHistory(body);
     } catch (err) {
-      showAlert("error", err.message || "An error occurred.");
+      if (err.name === "AbortError" || String(err.message).toLowerCase().includes("abort")) {
+        showAlert("info", "Document generation was cancelled.");
+      } else {
+        showAlert("error", err.message || "An error occurred.");
+      }
     } finally {
+      currentGenerationAbortCtrl = null;
+      activeXhr = null;
       clearInterval(timer);
       setLoading(false);
     }

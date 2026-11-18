@@ -199,6 +199,41 @@ a { color: inherit; }
 .btn-primary:disabled { background: var(--surface-2); color: var(--muted); opacity: 1; }
 .btn-secondary { background: transparent; color: var(--fg); border-color: var(--line); }
 .btn-secondary:hover:not(:disabled) { background: var(--surface-2); }
+.btn-danger {
+  background: transparent;
+  color: var(--err);
+  border-color: color-mix(in srgb, var(--err) 35%, transparent);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--err-soft);
+  border-color: var(--err);
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--muted);
+  border-color: transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+.generate-btn-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 18px;
+  align-items: stretch;
+}
+.generate-btn-row #generate-btn { margin-top: 0; flex: 1; }
+.btn-cancel {
+  flex-shrink: 0;
+  padding: 13px 20px;
+  border-color: color-mix(in srgb, var(--err) 45%, transparent);
+  color: var(--err);
+}
+.btn-cancel:hover:not(:disabled) {
+  background: var(--err-soft);
+  border-color: var(--err);
+}
 #generate-btn { width: 100%; margin-top: 18px; padding: 16px 22px; font-size: 1rem; }
 
 .spinner {
@@ -231,6 +266,7 @@ a { color: inherit; }
 .alert { margin-top: 16px; padding: 12px 16px; border-radius: 16px; font-size: 0.9rem; line-height: 1.45; border: 1px solid; }
 .alert.error { background: var(--err-bg); color: var(--err); border-color: var(--err-line); }
 .alert.success { background: var(--support-soft); color: var(--support); border-color: var(--support); }
+.alert.info { background: var(--surface-2); color: var(--fg); border-color: var(--line); }
 .panel-stage .alert.error { background: #FEF2F2; color: #B91C1C; border-color: #FECACA; }
 
 /* ---------- Results ---------- */
@@ -268,6 +304,27 @@ a { color: inherit; }
 .badge {
   flex-shrink: 0; padding: 6px 12px; border-radius: 999px; background: var(--support-soft);
   color: var(--support); font-size: 0.75rem; font-family: var(--f-mono);
+}
+.report-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.btn-clear-report {
+  font-size: 0.78rem;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+  background: var(--surface-2);
+  transition: all .2s;
+}
+.btn-clear-report:hover:not(:disabled) {
+  color: var(--err);
+  border-color: var(--err);
+  background: var(--err-soft);
 }
 
 .tiles { display: flex; flex-wrap: wrap; gap: 8px; margin: 22px 0; }
@@ -462,6 +519,14 @@ a { color: inherit; }
 
 /* ---------- History ---------- */
 .history { margin-top: 20px; animation-delay: .8s; }
+.history-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.history-head .panel-title { margin-bottom: 0; }
 .history-list { list-style: none; margin: 0; padding: 0; }
 .history-list li {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;

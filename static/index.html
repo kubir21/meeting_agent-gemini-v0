@@ -83,10 +83,15 @@
             </label>
           </div>
 
-          <button id="generate-btn" type="submit" class="btn btn-primary" disabled>
-            <span class="spinner" aria-hidden="true"></span>
-            <span class="btn-label">Generate report</span>
-          </button>
+          <div class="generate-btn-row">
+            <button id="generate-btn" type="submit" class="btn btn-primary" disabled>
+              <span class="spinner" aria-hidden="true"></span>
+              <span class="btn-label">Generate report</span>
+            </button>
+            <button id="cancel-btn" type="button" class="btn btn-secondary btn-cancel" title="Cancel document generation" aria-label="Cancel document generation" hidden>
+              Cancel
+            </button>
+          </div>
         </form>
 
         <div id="progress-container" class="progress-container" hidden>
@@ -123,7 +128,10 @@
               <div id="r-sub" class="r-sub"></div>
               <div id="r-created" class="r-created"></div>
             </div>
-            <span id="r-id" class="badge"></span>
+            <div class="report-head-actions">
+              <span id="r-id" class="badge"></span>
+              <button id="r-clear-btn" class="btn btn-ghost btn-clear-report" type="button" title="Clear this report and return to home">✕ Clear</button>
+            </div>
           </div>
 
           <div class="tiles" id="r-tiles"></div>
@@ -131,6 +139,10 @@
           <div class="actions">
             <button id="dl-pdf" class="btn btn-primary" type="button">Download report (PDF)</button>
             <button id="dl-txt" class="btn btn-secondary" type="button">Download transcript (.txt)</button>
+            <button id="clear-report-btn" class="btn btn-secondary" type="button" title="Clear this report and return to home">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              <span>Clear report</span>
+            </button>
           </div>
           <div class="email-box">
             <label class="email-label" for="email-input">Send report by email</label>
@@ -163,7 +175,10 @@
     </div>
 
     <section class="panel history" id="history-panel" hidden>
-      <h2 class="panel-title">Recent reports</h2>
+      <div class="history-head">
+        <h2 class="panel-title">Recent reports</h2>
+        <button id="clear-history-btn" class="btn btn-ghost btn-sm" type="button" title="Clear all saved reports">Clear history</button>
+      </div>
       <ul id="history-list" class="history-list"></ul>
       <p class="history-note">Saved in this browser only.</p>
     </section>
@@ -174,6 +189,6 @@
     <span>Reports are generated per upload. History stays in this browser.</span>
   </footer>
 
-  <script src="/static/app.js?v=20261118a"></script>
+  <script src="/static/app.js?v=20261118b"></script>
 </body>
 </html>
