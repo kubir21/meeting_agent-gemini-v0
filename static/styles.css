@@ -251,6 +251,20 @@ a { color: inherit; }
   font-size: clamp(1.8rem, 3.6vw, 2.6rem); line-height: 1.02; letter-spacing: -0.04em; word-break: break-word;
 }
 .r-sub { color: var(--muted); font-size: 0.82rem; font-family: var(--f-mono); }
+.r-created {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-family: var(--f-mono);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.r-created svg {
+  color: var(--accent);
+  opacity: 0.85;
+  flex-shrink: 0;
+}
 .badge {
   flex-shrink: 0; padding: 6px 12px; border-radius: 999px; background: var(--support-soft);
   color: var(--support); font-size: 0.75rem; font-family: var(--f-mono);

@@ -38,9 +38,11 @@
   const fmtSize = (b) => (b > 1e6 ? (b / 1e6).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1e3)) + " KB");
   const slug = (s) => String(s || "report").replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "report";
   const fmtDateTime = (iso) => {
+    if (!iso) return "";
     const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
     return d.toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" }) +
-      ", " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      " at " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   };
 
   function showAlert(type, msg) {
@@ -147,10 +149,17 @@
     $("r-sub").textContent = cat;
     $("r-id").textContent = r.report_id;
 
+    const createdStr = fmtDateTime(r.generated_at || new Date().toISOString());
+    const createdEl = $("r-created");
+    if (createdEl) {
+      createdEl.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg><span>Created: ${esc(createdStr)}</span>`;
+    }
+
     const tiles = [
       ["Category", r.category || "Not mentioned"],
       ["Duration", r.meta?.duration || "Not available"],
       ["Language", r.meta?.language || "Not available"],
+      ["Created", createdStr],
       ["Report ID", r.report_id],
     ];
     $("r-tiles").innerHTML = tiles.map(([k, v]) =>
@@ -211,7 +220,7 @@
       <li data-id="${esc(h.report_id)}">
         <div class="h-main">
           <div class="h-title">${esc(h.company)}</div>
-          <div class="h-meta">${esc(h.category || "Wellbeing Report")}  |  ${esc(h.report_id)}</div>
+          <div class="h-meta">${esc(h.category || "Wellbeing Report")}  |  ${esc(h.report_id)}${h.generated_at ? `  |  ${esc(fmtDateTime(h.generated_at))}` : ""}</div>
         </div>
         <div class="h-actions">
           <button class="btn btn-secondary btn-sm" data-act="view" type="button">View</button>
